@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+output*/
+batch_output/
+test_run/
+test.png
+test*.png
+.pytest_cache/
+*.exe
+build/
+dist/
+*.spec
