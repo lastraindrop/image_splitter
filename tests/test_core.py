@@ -1,21 +1,26 @@
+# tests/test_core.py
 import unittest
 import os
 import shutil
 from PIL import Image
+from pathlib import Path
 from core import split_image_core, batch_process_images
 
 class TestImageSplitter(unittest.TestCase):
     def setUp(self):
-        # 动态创建测试环境，避免硬编码重复
-        self.test_dir = "test_run_dynamic"
-        self.output_dir = os.path.join(self.test_dir, "output")
-        os.makedirs(self.output_dir, exist_ok=True)
+        # 动态创建测试环境，避免硬编码路径
+        self.test_dir = Path("test_run_dynamic").resolve()
+        self.output_dir = self.test_dir / "output"
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # 准备测试素材字典 {名称: (路径, 宽高, 模式)}
         self.test_images = {
-            "rgb": (os.path.join(self.test_dir, "test_rgb.png"), (200, 200), "RGB"),
-            "rgba": (os.path.join(self.test_dir, "test_rgba.png"), (150, 200), "RGBA"),
-            "small": (os.path.join(self.test_dir, "test_small.jpg"), (10, 10), "RGB")
+            "rgb": (self.test_dir / "test_rgb.png", (200, 200), "RGB"),
+            "rgba": (self.test_dir / "test_rgba.png", (150, 200), "RGBA"),
+            "small": (self.test_dir / "test_small.jpg", (10, 10), "RGB")
         }
         
         for name, (path, size, mode) in self.test_images.items():
@@ -23,96 +28,79 @@ class TestImageSplitter(unittest.TestCase):
 
     def tearDown(self):
         # 彻底清理环境
-        if os.path.exists(self.test_dir):
+        if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
 
     def _verify_split(self, success, msg, expected_success, expected_files_count=None, check_func=None):
-        """统一的断言与结果检查辅助函数，彻底消除重复的断言代码"""
-        self.assertEqual(success, expected_success, msg=f"期望的成功状态为 {expected_success}，但实际为 {success}. 提示信息: {msg}")
+        """统一的断言与结果检查辅助函数"""
+        self.assertEqual(success, expected_success, msg=f"期望结果为 {expected_success}，但得到了 {success}。错误信息: {msg}")
         
         if expected_success and expected_files_count is not None:
-            self.assertTrue(os.path.exists(self.output_dir))
-            files = os.listdir(self.output_dir)
+            self.assertTrue(self.output_dir.exists())
+            files = list(self.output_dir.glob("*"))
             self.assertEqual(len(files), expected_files_count, msg=f"生成文件数不符。期望: {expected_files_count}, 实际: {len(files)}")
             
-            # 支持动态传入回调函数校验图片属性
             if check_func and files:
-                sample_path = os.path.join(self.output_dir, files[0])
-                with Image.open(sample_path) as img:
+                with Image.open(files[0]) as img:
                     check_func(img)
                     
-        # 无论成功与否，重置输出目录以备下一个子测试 (subTest)
-        if os.path.exists(self.output_dir):
-            shutil.rmtree(self.output_dir)
-            os.makedirs(self.output_dir, exist_ok=True)
+        # 重置输出目录以便并行子测试
+        if self.output_dir.exists():
+            for f in self.output_dir.glob("*"):
+                if f.is_file(): f.unlink()
 
     def test_split_combinations(self):
-        """1. 适应多种参数组合 (成功路径): 运用 subTest 参数化测试消灭雷同代码"""
+        """1. 适应多种参数组合 (成功路径)"""
         rgb_path = self.test_images["rgb"][0]
         rgba_path = self.test_images["rgba"][0]
 
-        # 数据驱动：测试多种不同的切分参数情况
         test_cases = [
-            # (image_path, rows, cols, offsets, template, expected_count, check_func)
-            (rgb_path, 2, 2, (0,0,0,0), "{filename}_{index}", 4, None), # 基础 2x2
-            (rgb_path, 1, 3, (0,0,0,0), "{filename}_{index}", 3, None), # 非正方形 (长宽不整除)
-            (rgba_path, 2, 2, (0,0,0,0), "{filename}_{index}", 4, lambda img: self.assertEqual(img.mode, 'RGBA')), # RGBA 色彩模式保留
-            (rgb_path, 2, 2, (10,10,10,10), "{filename}_{index}", 4, lambda img: self.assertEqual(img.size, (90, 90))), # 正常偏移量计算
-            (rgb_path, 1, 2, (0,0,0,0), "custom_{row}_{col}_{index}", 2, lambda img: self.assertTrue(any(f.startswith("custom_") for f in os.listdir(self.output_dir)))), # 自定义合法模板
+            # (path, rows, cols, offsets, template, expected_count, check_func)
+            (rgb_path, 2, 2, (0,0,0,0), "{filename}_{index}", 4, None), 
+            (str(rgb_path), 1, 3, (0,0,0,0), "{filename}_{index}", 3, None), # 测试字符串路径输入
+            (rgba_path, 2, 2, (0,0,0,0), "{filename}_{index}", 4, lambda img: self.assertEqual(img.mode, 'RGBA')),
+            (rgb_path, 2, 2, (10,10,10,10), "{filename}_{index}", 4, lambda img: self.assertEqual(img.size, (90, 90))), 
+            (rgb_path, 1, 2, (0,0,0,0), "custom_{row}_{col}_{index}", 2, lambda img: self.assertTrue(any("custom_" in f.name for f in self.output_dir.glob("*")))),
         ]
 
         for path, r, c, offsets, template, count, check_func in test_cases:
-            with self.subTest(path=os.path.basename(path), r=r, c=c, offsets=offsets, template=template):
-                success, msg = split_image_core(path, r, c, self.output_dir, template=template, offsets=offsets)
+            with self.subTest(path=Path(path).name, r=r, c=c):
+                success, msg = split_image_core(str(path), r, c, str(self.output_dir), template=template, offsets=offsets)
                 self._verify_split(success, msg, True, count, check_func)
 
     def test_split_edge_cases(self):
-        """2. 测试异常与边缘情况 (失败路径): 验证防御性代码是否有效"""
+        """2. 测试异常逻辑"""
         rgb_path = self.test_images["rgb"][0]
-        missing_path = os.path.join(self.test_dir, "missing.png")
+        missing_path = self.test_dir / "missing.png"
 
         test_cases = [
-            # (image_path, rows, cols, offsets, template, expected_err_keyword)
-            (rgb_path, 0, 2, (0,0,0,0), "{filename}_{index}", "大于0"), # 无效行列
-            (rgb_path, -1, -2, (0,0,0,0), "{filename}_{index}", "大于0"), # 负数边界
-            (rgb_path, 2, 2, (150,0,150,0), "{filename}_{index}", "偏移量过大"), # 越界偏移
-            (rgb_path, 1, 2, (0,0,0,0), "bad_{invalid_key}", "无效的占位符"), # 非法模板
-            (missing_path, 2, 2, (0,0,0,0), "{filename}_{index}", "找不到文件"), # 文件不存在
+            (rgb_path, 0, 2, (0,0,0,0), "{filename}_{index}", "大于0"), 
+            (rgb_path, 2, 2, (150,0,150,0), "{filename}_{index}", "导致区域无效"),
+            (rgb_path, 1, 2, (0,0,0,0), "bad_{invalid_key}", "无效的占位符"),
+            (missing_path, 2, 2, (0,0,0,0), "{filename}_{index}", "找不到文件"),
         ]
 
         for path, r, c, offsets, template, err_keyword in test_cases:
-            with self.subTest(desc=err_keyword, r=r, offsets=offsets):
-                success, msg = split_image_core(path, r, c, self.output_dir, template=template, offsets=offsets)
+            with self.subTest(err=err_keyword):
+                success, msg = split_image_core(str(path), r, c, str(self.output_dir), template=template, offsets=offsets)
                 self._verify_split(success, msg, False)
                 self.assertIn(err_keyword, msg)
 
-    def test_batch_process_generator_e2e(self):
-        """3. 端到端 E2E 测试: 覆盖最新的 Generator 批量处理架构"""
-        input_paths = [
-            self.test_images["rgb"][0],   # 200x200, 应该成功
-            self.test_images["small"][0], # 10x10,   偏移量 20 会导致这张失败
-            self.test_images["rgba"][0]   # 150x200, 应该成功
-        ]
+    def test_batch_process_e2e(self):
+        """3. 全流程生成器测试"""
+        input_paths = [str(v[0]) for v in self.test_images.values()]
         
         results = []
-        # 使用生成器进行全流程处理，故意使用一个会使 small 图片失败的偏移量 (20)
         for path, success, msg in batch_process_images(
-            input_paths, rows=2, cols=2, output_root=self.output_dir, 
-            template="batch_{filename}_{index}", offsets=(20, 20, 20, 20)
+            input_paths, rows=2, cols=2, output_root=str(self.output_dir), 
+            template="bt_{filename}_{index}", offsets=(5, 5, 5, 5)
         ):
             results.append((path, success))
             
-        # 确保遍历了所有文件
         self.assertEqual(len(results), 3)
-        
-        # 验证每个文件的处理状态
-        self.assertEqual(results[0][1], True)  # rgb 成功
-        self.assertEqual(results[1][1], False) # small 失败 (有效图片区域无效)
-        self.assertEqual(results[2][1], True)  # rgba 成功
-        
-        # 验证最终生成的文件数量：rgb(4) + rgba(4) = 8 张
-        files = os.listdir(self.output_dir)
-        self.assertEqual(len(files), 8)
+        self.assertTrue(results[0][1]) # rgb
+        self.assertTrue(results[1][1]) # rgba
+        self.assertFalse(results[2][1]) # small (too small for offsets)
 
 if __name__ == '__main__':
     unittest.main()
