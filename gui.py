@@ -5,7 +5,7 @@ import os
 import sys
 import threading
 from PIL import Image, ImageTk
-from core import split_image_core, batch_process_images
+from core import batch_process_images
 
 class ImageSplitterApp:
     def __init__(self, root):
@@ -89,7 +89,7 @@ class ImageSplitterApp:
         
         ttk.Label(out_frame, text="命名模板:").pack(anchor=tk.W)
         ttk.Entry(out_frame, textvariable=self.template_var).pack(fill=tk.X, pady=2)
-        ttk.Label(out_frame, text="提示: {filename}, {index}, {row}, {col}", font=("", 8), foreground="gray").pack(anchor=tk.W)
+        ttk.Label(out_frame, text="提示: {filename}, {index}, {row}, {col}, {ext}", font=("", 8), foreground="gray").pack(anchor=tk.W)
         
         ttk.Label(out_frame, text="输出目录:").pack(anchor=tk.W, pady=(10, 0))
         out_sel = ttk.Frame(out_frame)
@@ -158,7 +158,8 @@ class ImageSplitterApp:
         try:
             self.current_preview_img = Image.open(path)
             self.update_preview()
-        except:
+        except Exception as e:
+            print(f"预览加载失败: {e}")
             self.current_preview_img = None
             self.canvas.delete("all")
 
@@ -180,8 +181,11 @@ class ImageSplitterApp:
         x0 = (cw - nw) // 2
         y0 = (ch - nh) // 2
         
-        resized = self.current_preview_img.resize((nw, nh), Image.LANCZOS)
-        self.tk_preview_img = ImageTk.PhotoImage(resized)
+        # 为了性能优化，使用 Image.BILINEAR 或者 thumbnail
+        # 先复制一份以免修改原图
+        preview_copy = self.current_preview_img.copy()
+        preview_copy.thumbnail((nw, nh), Image.BILINEAR)
+        self.tk_preview_img = ImageTk.PhotoImage(preview_copy)
         self.canvas.create_image(cw//2, ch//2, image=self.tk_preview_img)
         
         # 绘制偏移矩形
@@ -209,8 +213,8 @@ class ImageSplitterApp:
                     for j in range(1, cols):
                         x = cx1 + (cx2 - cx1) * j / cols
                         self.canvas.create_line(x, cy1, x, cy2, fill="cyan")
-        except:
-            pass
+        except Exception as e:
+            print(f"预览绘制失败: {e}")
 
     def run_batch(self):
         if not self.input_paths:
@@ -224,28 +228,38 @@ class ImageSplitterApp:
         self.progress['value'] = 0
         self.progress['maximum'] = len(self.input_paths)
         
-        # 使用线程处理防止 GUI 假死
-        thread = threading.Thread(target=self.process_thread)
-        thread.start()
-
-    def process_thread(self):
+        # 获取所有参数，避免在子线程中调用 tkinter 变量
+        paths = list(self.input_paths)
         rows = self.rows_var.get()
         cols = self.cols_var.get()
         template = self.template_var.get()
         out_root = self.output_dir.get()
         offsets = (self.off_l.get(), self.off_t.get(), self.off_r.get(), self.off_b.get())
         
+        # 使用线程处理防止 GUI 假死
+        thread = threading.Thread(
+            target=self.process_thread,
+            args=(paths, rows, cols, template, out_root, offsets)
+        )
+        thread.start()
+
+    def process_thread(self, paths, rows, cols, template, out_root, offsets):
         success_count = 0
-        for i, path in enumerate(self.input_paths):
-            self.root.after(0, lambda v=i: self.status_label.config(text=f"正在处理: {os.path.basename(path)} ({v+1}/{len(self.input_paths)})"))
+        
+        # 使用 core.py 的生成器进行处理
+        processor = batch_process_images(paths, rows, cols, out_root, template, offsets)
+        
+        for i, (path, success, msg) in enumerate(processor):
+            self.root.after(0, lambda v=i, p=path: self.status_label.config(
+                text=f"正在处理: {os.path.basename(p)} ({v+1}/{len(paths)})"
+            ))
             
-            success, msg = split_image_core(path, rows, cols, out_root, template, offsets)
             if success:
                 success_count += 1
                 
-            self.root.after(0, lambda v=i+1: self.progress.step(1))
+            self.root.after(0, lambda: self.progress.step(1))
             
-        self.root.after(0, lambda: self.finish_batch(success_count, len(self.input_paths)))
+        self.root.after(0, lambda: self.finish_batch(success_count, len(paths)))
 
     def finish_batch(self, success, total):
         self.btn_run.config(state=tk.NORMAL)

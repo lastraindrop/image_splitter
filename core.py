@@ -8,6 +8,7 @@ def split_image_core(image_path, rows, cols, output_dir, template="{filename}_{i
     template: 命名模板，支持 {filename}, {row}, {col}, {index}, {ext}
     offsets: (left, top, right, bottom) 裁剪偏移量
     """
+    img = None
     try:
         if not os.path.exists(image_path):
             return False, f"错误: 找不到文件 {image_path}"
@@ -34,6 +35,14 @@ def split_image_core(image_path, rows, cols, output_dir, template="{filename}_{i
             
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         ext = os.path.splitext(image_path)[1] or ".png"
+
+        # 验证模板是否合法
+        try:
+            _ = template.format(filename=base_name, row=1, col=1, index="01", ext=ext[1:])
+        except KeyError as e:
+            return False, f"命名模板包含无效的占位符: {e}"
+        except Exception as e:
+            return False, f"命名模板解析失败: {e}"
             
         count = 1
         for i in range(rows):
@@ -46,7 +55,6 @@ def split_image_core(image_path, rows, cols, output_dir, template="{filename}_{i
                 cell = img.crop((left, upper, right, lower))
                 
                 # 解析模板命名
-                # {index} 使用 zfill(2) 补零
                 name = template.format(
                     filename=base_name,
                     row=i + 1,
@@ -65,20 +73,15 @@ def split_image_core(image_path, rows, cols, output_dir, template="{filename}_{i
         
     except Exception as e:
         return False, f"发生错误: {str(e)}"
+    finally:
+        if img is not None and hasattr(img, 'close'):
+            img.close()
 
 def batch_process_images(input_paths, rows, cols, output_root, template="{filename}_{index}", offsets=(0, 0, 0, 0)):
     """
-    批量处理多个图片
+    批量处理多个图片 (生成器)
+    产出 (path, success, msg)
     """
-    results = []
-    total_success = 0
-    
     for path in input_paths:
-        # 每个文件单独一个子目录 (可选，或者直接平铺)
-        # 这里默认直接在 output_root 下平铺，除非模板包含路径
         success, msg = split_image_core(path, rows, cols, output_root, template, offsets)
-        results.append((path, success, msg))
-        if success:
-            total_success += 1
-            
-    return total_success, results
+        yield path, success, msg
