@@ -6,6 +6,8 @@ test_run/
 test.png
 test*.png
 .pytest_cache/
+test_run_dynamic/
+test_cli_dynamic/
 *.exe
 build/
 dist/

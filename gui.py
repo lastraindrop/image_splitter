@@ -33,6 +33,7 @@ class ImageSplitterApp:
         self.thumb_img: Optional[Image.Image] = None
         self.tk_thumb: Optional[ImageTk.PhotoImage] = None
         self.preview_ratio: float = 1.0
+        self._resize_after_id: Optional[str] = None  # 用于防抖
         
         self.setup_ui()
         
@@ -113,22 +114,33 @@ class ImageSplitterApp:
         ttk.Label(right_frame, text="实时网格预览", font=("", 10, "bold")).pack(pady=5)
         self.canvas = tk.Canvas(right_frame, bg="#E0E0E0", highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.canvas.bind("<Configure>", lambda e: self.load_preview_ui())
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
+
+    def _on_canvas_configure(self, event):
+        """防抖: 窗口拖拽期间合并多次 Configure 事件"""
+        if self._resize_after_id is not None:
+            self.root.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.root.after(150, self.load_preview_ui)
 
     def select_files(self):
         paths = filedialog.askopenfilenames(title="选择图片", filetypes=[("Images", "*.jpg *.jpeg *.png *.bmp *.webp")])
         if paths:
-            self.input_paths.extend(list(paths))
+            new_paths = [p for p in paths if p not in self.input_paths]
+            self.input_paths.extend(new_paths)
             self.refresh_file_list()
 
     def select_folder_input(self):
         folder = filedialog.askdirectory()
         if folder:
             exts = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+            existing = set(self.input_paths)
             for root, _, files in os.walk(folder):
                 for f in files:
                     if f.lower().endswith(exts):
-                        self.input_paths.append(os.path.join(root, f))
+                        full_path = os.path.join(root, f)
+                        if full_path not in existing:
+                            self.input_paths.append(full_path)
+                            existing.add(full_path)
             self.refresh_file_list()
 
     def clear_files(self):
@@ -198,7 +210,8 @@ class ImageSplitterApp:
                 try: 
                     val = v.get().strip()
                     return int(val) if val else default
-                except: return default
+                except (ValueError, TypeError): 
+                    return default
 
             rows, cols = max(1, get_val(self.rows_var, 3)), max(1, get_val(self.cols_var, 3))
             ol, ot, oright, ob = get_val(self.off_l), get_val(self.off_t), get_val(self.off_r), get_val(self.off_b)
@@ -223,7 +236,7 @@ class ImageSplitterApp:
                     self.canvas.create_line(x, cy1, x, cy2, fill="#00B0FF", tags="overlay")
             else:
                 self.canvas.create_text(cw//2, ch//2, text="⚠️ 偏移超出图片范围", fill="#D32F2F", font=("", 12, "bold"), tags="overlay")
-        except Exception:
+        except (ValueError, TypeError, tk.TclError):
             pass
 
     def run_batch(self):
@@ -234,8 +247,14 @@ class ImageSplitterApp:
         try:
             rows = int(self.rows_var.get())
             cols = int(self.cols_var.get())
+            offs = (
+                int(self.off_l.get() or 0), 
+                int(self.off_t.get() or 0), 
+                int(self.off_r.get() or 0), 
+                int(self.off_b.get() or 0)
+            )
         except ValueError:
-            messagebox.showerror("错误", "行列数必须为有效整数")
+            messagebox.showerror("错误", "行列数和偏移量必须为有效整数")
             return
 
         self.btn_run.config(state=tk.DISABLED)
@@ -248,12 +267,7 @@ class ImageSplitterApp:
             "cols": cols,
             "out": self.output_dir.get(),
             "tmpl": self.template_var.get(),
-            "offs": (
-                int(self.off_l.get() or 0), 
-                int(self.off_t.get() or 0), 
-                int(self.off_r.get() or 0), 
-                int(self.off_b.get() or 0)
-            )
+            "offs": offs
         }
         
         threading.Thread(target=self.work_thread, kwargs=args, daemon=True).start()
@@ -263,7 +277,7 @@ class ImageSplitterApp:
         from core import split_image_core
         
         for i, path in enumerate(paths):
-            self.root.after(0, lambda p=path, idx=i: self.status_label.config(text=f"正在切割: {os.path.basename(p)} ({idx+1}/{len(paths)})"))
+            self.root.after(0, lambda p=path, idx=i, total=len(paths): self.status_label.config(text=f"正在切割: {os.path.basename(p)} ({idx+1}/{total})"))
             
             success, _ = split_image_core(path, rows, cols, out, tmpl, offs)
             if success: success_count += 1

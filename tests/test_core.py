@@ -102,5 +102,47 @@ class TestImageSplitter(unittest.TestCase):
         self.assertTrue(results[1][1]) # rgba
         self.assertFalse(results[2][1]) # small (too small for offsets)
 
+    def test_invalid_params_no_side_effects(self):
+        """验证非法参数不会创建输出目录或产生文件"""
+        clean_dir = self.test_dir / "should_not_exist"
+        rgb_path = self.test_images["rgb"][0]
+        
+        # rows=0 应直接返回，不创建目录
+        success, msg = split_image_core(str(rgb_path), 0, 2, str(clean_dir))
+        self.assertFalse(success)
+        self.assertFalse(clean_dir.exists(), "非法参数不应创建输出目录")
+
+    def test_pixel_accuracy(self):
+        """验证切割后子图像素与原图完全一致"""
+        # 创建一张含有渐变色的测试图
+        img = Image.new("RGB", (100, 100))
+        for x in range(100):
+            for y in range(100):
+                img.putpixel((x, y), (x * 2, y * 2, 128))
+        test_path = self.test_dir / "gradient.png"
+        img.save(test_path)
+        
+        success, _ = split_image_core(str(test_path), 2, 2, str(self.output_dir))
+        self.assertTrue(success)
+        
+        # 读取左上角子图，验证像素
+        tiles = sorted(self.output_dir.glob("*.png"))
+        with Image.open(tiles[0]) as tile:
+            # 第一张 tile (0,0) 位置像素应等于原图 (0,0)
+            self.assertEqual(tile.getpixel((0, 0)), (0, 0, 128))
+            # tile 尺寸应该是 50x50，(49,49) 对应原图 (49,49)
+            self.assertEqual(tile.getpixel((49, 49)), (98, 98, 128))
+
+    def test_large_grid_completes(self):
+        """验证 20x20=400 块切割正常完成"""
+        img = Image.new("RGB", (400, 400), color="green")
+        path = self.test_dir / "large.png"
+        img.save(path)
+        
+        success, msg = split_image_core(str(path), 20, 20, str(self.output_dir))
+        self.assertTrue(success)
+        files = list(self.output_dir.glob("*"))
+        self.assertEqual(len(files), 400)
+
 if __name__ == '__main__':
     unittest.main()

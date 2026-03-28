@@ -22,6 +22,10 @@ def split_image_core(
     :return: (是否成功, 提示消息)
     """
     try:
+        # Fail-Fast: 先验证参数
+        if rows <= 0 or cols <= 0:
+            return False, "行数和列数必须大于0"
+            
         if not os.path.exists(image_path):
             return False, f"错误: 找不到文件 {image_path}"
             
@@ -37,12 +41,9 @@ def split_image_core(
             if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
                 return False, f"偏移量导致区域无效: {crop_box} (原图尺寸: {orig_w}x{orig_h})"
                 
-            # 获取裁剪后的内存副本，以便 orig_img 能够正常在 with 结束后释放文件句柄
+            # 获取裁剪后的内存副本
             img = orig_img.crop(crop_box)
             img_width, img_height = img.size
-            
-            if rows <= 0 or cols <= 0:
-                return False, "行数和列数必须大于0"
                 
             if not os.path.exists(output_dir):
                 os.makedirs(output_dir, exist_ok=True)
@@ -86,15 +87,13 @@ def split_image_core(
                         
                     save_path = os.path.join(output_dir, name)
                     cell.save(save_path)
+                    cell.close()  # 显式关闭子图资源
                     count += 1
-            
-            # 显式清理内存中的裁剪大副本
-            img.close()
                 
         return True, f"成功生成 {count-1} 张图片至 {output_dir}"
         
-    except Exception as e:
-        return False, f"处理异常: {str(e)}"
+    except (OSError, ValueError) as e:
+        return False, f"处理异常 ({type(e).__name__}): {str(e)}"
 
 def batch_process_images(
     input_paths: List[str], 

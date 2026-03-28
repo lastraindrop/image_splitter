@@ -2,8 +2,12 @@ import argparse
 import sys
 import os
 import glob
+import multiprocessing
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
+
+# 确保在 cli 脚本所在目录外运行时也能正确找到核心模块
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import split_image_core
 from typing import List, Tuple
 
@@ -37,7 +41,10 @@ def main():
         elif "*" in item or "?" in item:
             # 处理通配符
             found = glob.glob(item, recursive=args.recursive)
-            raw_input_files.extend([Path(f).resolve() for f in found if Path(f).suffix.lower() in extensions])
+            raw_input_files.extend([
+                Path(f).resolve() for f in found 
+                if Path(f).is_file() and Path(f).suffix.lower() in extensions
+            ])
         else:
             if item_path.exists():
                 raw_input_files.append(item_path.resolve())
@@ -84,4 +91,5 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
