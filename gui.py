@@ -1,12 +1,26 @@
 # gui.py
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import os
-import sys
 import threading
+import subprocess
+import platform
+import time
 from PIL import Image, ImageTk
 from core import split_image_core
+from models import SplitConfig
 from typing import List, Optional, Tuple
+
+class UITheme:
+    """统一颜色与样式配置"""
+    PRIMARY = "#1A73E8"     # Google Blue
+    ACCENT = "#D93025"      # Google Red
+    SUCCESS = "#1E8E3E"     # Google Green
+    INFO = "#00B0FF"        # Azure
+    BG_LIGHT = "#F8F9FA"    # Soft Gray
+    BG_CANVAS = "#202124"   # Dark Mode Canvas (more premium)
+    TEXT_MAIN = "#202124"
+    TEXT_SUB = "#5F6368"
+    BORDER = "#DADCE0"
 
 class ImageSplitterApp:
     def __init__(self, root: tk.Tk):
@@ -31,15 +45,33 @@ class ImageSplitterApp:
         # 预览相关缓存 (针对性能优化)
         self.current_orig_size: Tuple[int, int] = (0, 0)
         self.thumb_img: Optional[Image.Image] = None
-        self.tk_thumb: Optional[ImageTk.PhotoImage] = None
         self.preview_ratio: float = 1.0
         self._resize_after_id: Optional[str] = None  # 用于防抖
         
-        self.setup_ui()
+        # 任务控制
+        self.stop_event = threading.Event()
+        self.theme = UITheme()
         
-        # 绑定重绘事件: 仅在值变动时触发快速重绘
+        self.setup_ui()
+        self.bind_shortcuts()
+        
         for var in [self.rows_var, self.cols_var, self.off_l, self.off_t, self.off_r, self.off_b]:
             var.trace_add("write", lambda *args: self.fast_update_preview())
+
+    def bind_shortcuts(self):
+        """绑定全局/局部快捷键"""
+        self.root.bind("<Return>", lambda e: self.run_batch())
+        self.file_listbox.bind("<Delete>", lambda e: self.remove_selected_file())
+        self.root.bind("<Control-a>", lambda e: self.file_listbox.select_set(0, tk.END))
+        
+    def remove_selected_file(self):
+        selection = self.file_listbox.curselection()
+        if selection:
+            idx = selection[0]
+            del self.input_paths[idx]
+            self.refresh_file_list()
+            self.thumb_img = None
+            self.canvas.delete("all")
 
     def setup_ui(self):
         main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
@@ -99,20 +131,33 @@ class ImageSplitterApp:
         action_f = ttk.Frame(left_frame, padding=5)
         action_f.pack(fill=tk.X, side=tk.BOTTOM)
         
-        self.btn_run = tk.Button(action_f, text="🚀 开始批量切割任务", command=self.run_batch, bg="#1976D2", fg="white", font=("", 11, "bold"), height=2)
-        self.btn_run.pack(fill=tk.X, pady=10)
+        self.btn_run = tk.Button(
+            action_f, text="🚀 开始批量切割任务", command=self.run_batch, 
+            bg=self.theme.PRIMARY, fg="white", font=("微软雅黑", 11, "bold"), 
+            height=2, activebackground="#174EA6", relief=tk.FLAT
+        )
+        self.btn_run.pack(fill=tk.X, pady=(10, 2))
+        
+        self.btn_stop = tk.Button(
+            action_f, text="⏹️ 停止任务", command=self.stop_task, 
+            bg=self.theme.ACCENT, fg="white", font=("微软雅黑", 9), 
+            height=1, state=tk.DISABLED, relief=tk.FLAT
+        )
+        self.btn_stop.pack(fill=tk.X, pady=(0, 10))
         
         self.progress = ttk.Progressbar(action_f, mode='determinate')
         self.progress.pack(fill=tk.X)
-        self.status_label = ttk.Label(action_f, text="准备就绪", foreground="#555")
+        self.status_label = ttk.Label(action_f, text="准备就绪", foreground=self.theme.TEXT_SUB)
         self.status_label.pack(pady=5)
 
         # --- 右侧预览区 ---
         right_frame = ttk.Frame(main_paned)
         main_paned.add(right_frame, weight=2)
         
-        ttk.Label(right_frame, text="实时网格预览", font=("", 10, "bold")).pack(pady=5)
-        self.canvas = tk.Canvas(right_frame, bg="#E0E0E0", highlightthickness=0)
+        self.info_label = ttk.Label(right_frame, text="实时网格预览", font=("微软雅黑", 10, "bold"))
+        self.info_label.pack(pady=5)
+        
+        self.canvas = tk.Canvas(right_frame, bg=self.theme.BG_CANVAS, highlightthickness=0)
         self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
@@ -173,7 +218,7 @@ class ImageSplitterApp:
                 self.current_orig_size = img.size
                 # 预提取缩略图，避免后续频繁操作原图内存
                 thumb = img.copy()
-                thumb.thumbnail((1024, 1024), Image.LANCZOS)
+                thumb.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
                 self.thumb_img = thumb
             self.load_preview_ui()
         except Exception as e:
@@ -193,7 +238,7 @@ class ImageSplitterApp:
         nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
         
         # 将缩略图再次 resize 到匹配画布的物理像素
-        display_img = self.thumb_img.resize((nw, nh), Image.BILINEAR)
+        display_img = self.thumb_img.resize((nw, nh), Image.Resampling.BILINEAR)
         self.tk_thumb = ImageTk.PhotoImage(display_img)
         
         self.canvas.delete("all")
@@ -225,19 +270,25 @@ class ImageSplitterApp:
             cx2, cy2 = x0 + nw - int(oright * self.preview_ratio), y0 + nh - int(ob * self.preview_ratio)
             
             if cx2 > cx1 and cy2 > cy1:
+                # 计算切片预估尺寸
+                target_w = (self.current_orig_size[0] - ol - oright) // cols
+                target_h = (self.current_orig_size[1] - ot - ob) // rows
+                self.info_label.config(text=f"预期切片尺寸: {target_w} x {target_h} px", foreground=self.theme.PRIMARY)
+
                 # 绘制红虚线裁剪框
-                self.canvas.create_rectangle(cx1, cy1, cx2, cy2, outline="#FF1744", width=2, dash=(4,4), tags="overlay")
+                self.canvas.create_rectangle(cx1, cy1, cx2, cy2, outline=self.theme.ACCENT, width=2, dash=(4,4), tags="overlay")
                 # 绘制青色切割网格
                 for i in range(1, rows):
                     y = cy1 + (cy2 - cy1) * i / rows
-                    self.canvas.create_line(cx1, y, cx2, y, fill="#00B0FF", tags="overlay")
+                    self.canvas.create_line(cx1, y, cx2, y, fill=self.theme.INFO, tags="overlay")
                 for j in range(1, cols):
                     x = cx1 + (cx2 - cx1) * j / cols
-                    self.canvas.create_line(x, cy1, x, cy2, fill="#00B0FF", tags="overlay")
+                    self.canvas.create_line(x, cy1, x, cy2, fill=self.theme.INFO, tags="overlay")
             else:
-                self.canvas.create_text(cw//2, ch//2, text="⚠️ 偏移超出图片范围", fill="#D32F2F", font=("", 12, "bold"), tags="overlay")
-        except (ValueError, TypeError, tk.TclError):
-            pass
+                self.info_label.config(text="⚠️ 偏移超出图片范围", foreground=self.theme.ACCENT)
+                self.canvas.create_text(cw//2, ch//2, text="⚠️ 偏移范围无效", fill=self.theme.ACCENT, font=("微软雅黑", 14, "bold"), tags="overlay")
+        except Exception as e:
+            self.info_label.config(text=f"参数错误: {e}", foreground=self.theme.ACCENT)
 
     def run_batch(self):
         if not self.input_paths:
@@ -245,53 +296,90 @@ class ImageSplitterApp:
             return
             
         try:
-            rows = int(self.rows_var.get())
-            cols = int(self.cols_var.get())
-            offs = (
-                int(self.off_l.get() or 0), 
-                int(self.off_t.get() or 0), 
-                int(self.off_r.get() or 0), 
-                int(self.off_b.get() or 0)
+            config = SplitConfig(
+                rows=int(self.rows_var.get()),
+                cols=int(self.cols_var.get()),
+                output_dir=self.output_dir.get(),
+                template=self.template_var.get(),
+                offsets=(
+                    int(self.off_l.get() or 0), 
+                    int(self.off_t.get() or 0), 
+                    int(self.off_r.get() or 0), 
+                    int(self.off_b.get() or 0)
+                )
             )
-        except ValueError:
-            messagebox.showerror("错误", "行列数和偏移量必须为有效整数")
+        except ValueError as e:
+            messagebox.showerror("参数错误", str(e))
+            return
+        except Exception as e:
+            messagebox.showerror("运行错误", f"初始化配置失败: {e}")
             return
 
         self.btn_run.config(state=tk.DISABLED)
+        self.btn_stop.config(state=tk.NORMAL)
         self.progress['value'] = 0
         self.progress['maximum'] = len(self.input_paths)
         
+        self.stop_event.clear()
         args = {
             "paths": list(self.input_paths),
-            "rows": rows,
-            "cols": cols,
-            "out": self.output_dir.get(),
-            "tmpl": self.template_var.get(),
-            "offs": offs
+            "config": config
         }
         
         threading.Thread(target=self.work_thread, kwargs=args, daemon=True).start()
 
-    def work_thread(self, paths, rows, cols, out, tmpl, offs):
+    def stop_task(self):
+        if messagebox.askyesno("确认", "确定要中断当前处理任务吗？"):
+            self.stop_event.set()
+            self.status_label.config(text="正在停止...")
+
+    def work_thread(self, paths, config: SplitConfig):
         success_count = 0
-        from core import split_image_core
+        is_aborted = False
         
         for i, path in enumerate(paths):
+            if self.stop_event.is_set():
+                is_aborted = True
+                break
+                
             self.root.after(0, lambda p=path, idx=i, total=len(paths): self.status_label.config(text=f"正在切割: {os.path.basename(p)} ({idx+1}/{total})"))
             
-            success, _ = split_image_core(path, rows, cols, out, tmpl, offs)
+            success, _ = split_image_core(path, config)
             if success: success_count += 1
             
             self.root.after(0, lambda: self.progress.step(1))
             
-        self.root.after(0, lambda: self.finish_report(success_count, len(paths)))
+        self.root.after(0, lambda: self.finish_report(success_count, len(paths), is_aborted))
 
-    def finish_report(self, s, total):
+    def finish_report(self, s, total, aborted=False):
         self.btn_run.config(state=tk.NORMAL)
-        self.status_label.config(text="任务已结束")
-        messagebox.showinfo("任务报告", f"处理完成！\n成功: {s} / {total}\n结果已保存至输出目录。")
-        if sys.platform == 'win32' and os.path.exists(self.output_dir.get()):
-            os.startfile(self.output_dir.get())
+        self.btn_stop.config(state=tk.DISABLED)
+        
+        if aborted:
+            msg = f"任务已中途中断！\n成功: {s} / {total}\n请检查输出目录。"
+            self.status_label.config(text="任务已取消", foreground=self.theme.ACCENT)
+        else:
+            msg = f"处理完成！\n成功: {s} / {total}\n结果已保存至输出目录。"
+            self.status_label.config(text="任务已结束", foreground=self.theme.SUCCESS)
+            
+        messagebox.showinfo("任务报告", msg)
+        
+        out_path = self.output_dir.get()
+        if os.path.exists(out_path):
+            self.open_folder(out_path)
+
+    def open_folder(self, path):
+        """跨平台打开目录"""
+        try:
+            curr_os = platform.system()
+            if curr_os == "Windows":
+                os.startfile(path)
+            elif curr_os == "Darwin": # macOS
+                subprocess.run(["open", path])
+            else: # Linux
+                subprocess.run(["xdg-open", path])
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     root = tk.Tk()

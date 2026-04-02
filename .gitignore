@@ -12,3 +12,5 @@ test_cli_dynamic/
 build/
 dist/
 *.spec
+
+code_review.txt
