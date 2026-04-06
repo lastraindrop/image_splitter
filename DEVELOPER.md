@@ -1,67 +1,86 @@
 # 开发者指南 (Developer Guide)
 
-本项目旨在提供一个高度模块化、具备工业级性能与安全性的图像处理工程体系。
+本项目旨在提供一个高度模块化、具备工业级性能与安全性的通用图像处理框架。
 
-## 项目结构
+## 核心架构 (Core Architecture)
+
+项目已全面迁移至 **Operator-Based (基于操作符)** 的设计哲学，对齐 Blender 等专业创作软件的设计逻辑。
+
 ```text
 image_splitter/
-├── core.py       # 核心引擎 (资源闭环管理，支持 Type Hints)
-├── cli.py        # 高性能命令行 (基于 ProcessPoolExecutor 并行)
-├── gui.py        #  premium GUI (基于二级缩略图缓存，支持任务中断与快捷键)
-├── models.py     # 数据模型 (SplitConfig 统一参数验证与动态对齐) [New]
-├── tests/        # 自动化测试 (涵盖核心逻辑、并发安全、路径穿越拦截及本地化 Sandbox)
-└── README.md     # 快速入门
+├── engine/           # 核心引擎 (通用调度与分发)
+│   ├── base.py       # 抽象基类 (BaseProcessor, BaseConfig)
+│   ├── registry.py   # 插件注册中心 (ProcessorRegistry)
+│   ├── operator.py   # 操作符接口 (Operator)
+│   └── dispatcher.py # 命令解析与链式分发 (CommandDispatcher)
+├── processors/       # 处理插件集 (高度可扩展)
+│   ├── splitter.py   # 基础网格切割插件
+│   ├── custom_splitter.py # 自定义线切割插件
+│   ├── resizer.py    # 图片缩放插件
+│   └── adjuster.py   # 画布调整与填充插件
+├── core.py           # 任务流水线引擎 (与 Registry 深度绑定)
+├── models.py         # 参数校验模型 (Fail-Fast 准则)
+├── gui.py            # 动态 UI 平台 (基于 Metadata 自动渲染)
+├── cli.py            # 高性能 CLI (多进程并发)
+└── tests/            # 自动化测试套件
 ```
 
 ## 核心设计准则
 
-1. **资源绝对安全**：
-   - 弃用传统的 `open/close` 模式，全线采用 `with Image.open(...) as img:` 结构。
-   - 裁切生成的子图副本 (`cell`) 会在保存后立即调用 `.close()`，确保大规模批量处理时的内存峰值可控。
+1. **一切皆操作符 (Operator Pattern)**：
+   - 每一个处理功能（如切割、缩放）都被抽象为一个 `Processor` 插件。
+   - 核心引擎通过 `Registry` 发现插件，并通过 `CommandDispatcher` 支持字符串形式的指令调用（如 `split(rows=3) | resize(w=512)`）。
 
-2. **多进程并行架构**：
-   - `cli.py` 实现了基于 `ProcessPoolExecutor` 的分片加速逻辑。
-   - **设计细节**：主进程负责路径过滤与任务分发，子进程独立执行 `PIL` 密集型裁切。通过 `-j` 参数动态调整 Worker 数量，默认适配当前 CPU 物理核心数。
+2. **UI 动态对齐 (Dynamic Metadata-Driven UI)**：
+   - 处理器通过 `get_ui_metadata()` 自描述所需参数。
+   - `gui.py` 根据元数据自动渲染输入控件，彻底消除了 UI 层的硬编码。
+   - 任何 Core 层的参数变动会自动同步至 UI，确保了**参数一致性**。
 
-3. **UI 性能与防御性逻辑**：
-   - **二级缓存设计**：`gui.py` 在加载原图时预生成 1024px 缩略图，所有网格预览操作仅基于该缩略图进行 Canvas 矢量重绘，完全解耦了“界面渲染”与“原图处理”。
-   - **优雅降级**：所有输入变量采用异常拦截机制。当用户输入非法字符或退格为空时，预览层自动应用默认值并给出图形化告警。
+3. **资源绝对安全**：
+   - 全线采用 `with Image.open(...)` 上下文管理。
+   - 裁切副本在处理完成后立即 `close()`，严格控制内存峰值。
 
-4. **现代路径处理**：
-   - 全面拥抱 `pathlib`。`cli.py` 的文件发现、递归检索均基于 `Path` 对象，确保跨平台兼容性。
-   - `core.py` 保持使用 `os.path` 以确保作为底层库时对各版本 Python 及调用环境的极致兼容。
+4. **Fail-Fast 校验准则**：
+   - 所有外部输入必须在执行 I/O 前完成类型、范围及物理合法性校验。
+   - 模型层 (`models.py`) 负责统一的参数结构化，核心层 (`core.py`) 负责业务逻辑校验。
 
-5. **参数动态对齐与一致性校验** (New):
-   - **Fail-Fast 准则**：所有外部输入（Rows, Cols, Offsets）必须在执行昂贵的 I/O 操作前完成类型、范围及物理合法性（如裁剪区域 > 0）的校验。
-   - **闭环同步测试**：引入 `test_pixel_accuracy` 和 `test_invalid_params_no_side_effects` 等基准测试，强制要求任何 UI 逻辑变动必须同步更新 Core 层的校验逻辑，确保各层对参数的理解完全一致。
+## 扩展一个新功能
+
+1. 在 `processors/` 目录下新建 Python 脚本，继承 `BaseProcessor`。
+2. 实现 `process()` 核心逻辑和 `get_ui_metadata()` 参数定义。
+3. 在 `core.py` 中调用 `ProcessorRegistry.register()` 进行注册。
+4. 运行 `python gui.py`，新功能将自动出现在下拉列表中，且参数面板自动生成。
 
 ## 测试与质量 (Testing Standards)
 
-- **执行指令**：`python -m unittest discover tests`
+- **执行指令**：`$env:PYTHONPATH='.'; python -m unittest discover tests` (Windows)
 - **覆盖范围**：
-  - `test_core.py`: 校验各种色彩模式 (RGB/RGBA)、行列组合及模板渲染逻辑。
-  - `test_cli.py`: 验证多进程分发正确性、命令行参数解析及递归扫描能力。
+  - `test_core.py`: 基础网格逻辑。
+  - `test_custom_splitter.py`: 不规则线条切割。
+  - `test_adjuster.py`: 画布增添与裁剪。
+  - `test_dispatcher.py`: 命令解析与分发。
+  - `test_new_fixes.py`: 参数校验与格式安全性。
 
 ---
 
 ## 路线图 (Roadmap)
 
 ### 📈 已完成 (Done)
-- [x] **高性能并发重构**：引入多核并行加速，将批量速度提升 4 倍以上。
-- [x] **安全性加固 (Security Hardened)**：实现**路径穿越 (Path Traversal)** 拦截，防止恶意文件名模板污染系统环境。
-- [x] **Premium GUI 交互**：引入 `UITheme` 现代化配色，支持任务中断、快捷键及实时切割尺寸看板。
-- [x] **架构解耦 (Model Driven)**：通过 `SplitConfig` 统一校验逻辑，消除 GUI/CLI/Core 间的重复代码。
-- [x] **零副作用测试 (Zero-Footprint)**：将测试产物迁移至项目本地并适配 `tempfile` 机制，彻底解决 Windows `/tmp` 权限报错。
-- [x] **资源泄露防御**：适配上下文管理器，消除大规模处理时的内存隐患。
+- [x] **高性能并发重构**：多进程并行加速。
+- [x] **安全性加固**：路径穿越拦截与格式安全性修复。
+- [x] **通用框架迁移**：引入 `BaseProcessor` 与 `Registry` 体系。
+- [x] **Blender 式操作符设计**：实现 `CommandDispatcher` 指令分发系统。
+- [x] **动态 UI 革命**：基于元数据自动生成参数面板，消除硬编码。
+- [x] **自定义线切割**：支持任意坐标的横纵切割。
+- [x] **画布调整功能**：支持增添、裁剪与自定义颜色填充。
 
 ### 🗓 短期计划 (Short-Term Goals)
-- [ ] **参数联动预设系统**：支持用户保存/加载常用的切割预设 (Presets)，一键应用到新图片。
-- [ ] **多帧/动图支持**：支持 GIF 和 WebP 动图的帧提取与分层切割及导出。
-- [ ] **冲突策略配置**：在批量重名时支持覆盖/跳过/自动重命名等精细化策略。
+- [ ] **参数联动预设系统**：支持用户保存/加载常用的操作序列 (Presets) 为本地脚本。
+- [ ] **多帧/动图支持**：支持 GIF 和 WebP 动图的帧提取与分层切割。
+- [ ] **冲突策略配置**：在批量重名时支持覆盖/跳过/自动重命名等策略。
+- [ ] **增强预览图层**：为缩放和画布调整提供实时 Canvas 图形反馈。
 
 ### 🚀 长期计划 (Long-Term Goals)
-- [ ] **AI 内容感知切割**：基于 CV 自动识别图片主体，实现非对称式的智能聚焦分割。
-- [ ] **处理管线扩展 (Pipeline)**：
-  - 支持切割后自动注入 Exif 元数据或版权水印。
-  - 集成 AI 超分辨率插件，提供切割后的高质量放大功能。
-- [ ] **云端同步预留**：架构层预留 Restful API 钩子，支持跨设备同步复杂切割参数。
+- [ ] **AI 内容感知切割**：集成 AI 模型自动识别主体并进行聚焦分割。
+- [ ] **处理管线扩展 (Pipeline)**：支持复杂的多步处理链（如：缩放 -> 旋转 -> 切割 -> 水印）。
+- [ ] **云端同步预留**：架构层预留 Restful API 钩子，支持跨设备同步处理脚本。

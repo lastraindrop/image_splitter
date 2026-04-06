@@ -7,7 +7,10 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 
 # 确保在 cli 脚本所在目录外运行时也能正确找到核心模块
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+project_root = str(Path(__file__).resolve().parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from core import split_image_core
 from models import SplitConfig
 from typing import List, Tuple
@@ -82,15 +85,11 @@ def main():
     )
     
     with ProcessPoolExecutor(max_workers=args.jobs) as executor:
-        # 准备任务
-        futures = [
-            executor.submit(
-                split_image_core, 
-                str(f), config
-            ) for f in input_files
-        ]
+        # 准备并分发任务
+        # 使用 list comprehension 一次性提交所有任务
+        futures = [executor.submit(split_image_core, str(f), config) for f in input_files]
         
-        # 收集结果
+        # 按提交顺序收集并报告结果 (保持日志整齐)
         for f_path, future in zip(input_files, futures):
             try:
                 success, msg = future.result()

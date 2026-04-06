@@ -13,4 +13,4 @@ build/
 dist/
 *.spec
 
-code_review.txt
+#code_review.txt

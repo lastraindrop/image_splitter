@@ -1,17 +1,19 @@
-# 图像网格切割工具 (Advanced Image Splitter)
+# 通用图像处理平台 (Advanced Image Processor)
 
-一个专业级、高性能、支持多核并行的图像网格切割工具，提供流畅的图形用户界面 (GUI) 和强大的命令行接口 (CLI)。
+一个对齐 Blender 操作符哲学、具备高性能多核并发能力的图像处理框架。支持网格切割、自定义线切、缩放、画布调整等多种功能。
 
 ## 🌟 核心功能
-- **高性能切图**：CLI 版本默认开启**多进程并行 (Multi-processing)**，处理效率比传统工具快 4-8 倍。
-- **极致预览体验**：GUI 采用**二级缩略图缓存**技术，在 4K 巨图下调整网格也完全不卡顿，并支持**实时切割尺寸看板**。
-- **资源安全保障**：底层严格执行 Pillow 句柄生命周期管理，新增**路径穿越 (Path Traversal)** 拦截，确保系统路径安全。
-- **架构解耦验证**：引入 `SplitConfig` 统一校验模型，实现 GUI、CLI 与 Core 层的参数动态对齐。
-- **批量处理**：支持通配符、目录递归扫描。基于 Generator 架构，内存占用极低。
-- **零副作用测试**：测试沙箱已迁移至项目本地 `tests/tmp_tests`，规避 Windows `/tmp` 权限报错问题。
-- **Premium UX**：支持任务中途停止、丰富快捷键（Delete, Ctrl+A, Enter）以及现代化主题配色。
+
+- **一切皆操作符 (Operators)**：底层逻辑与 UI 彻底解耦。支持 Blender 风格的操作符调用日志与指令分发。
+- **动态 UI 适配**：GUI 采用 **Metadata-Driven (元数据驱动)** 技术。添加新功能只需增加插件，界面会自动生成参数面板。
+- **高性能引擎**：CLI 版本默认开启 **多进程并行 (Multi-processing)**，处理效率领先同类工具 4-8 倍。
+- **工业级安全性**：严格执行 Pillow 句柄管理，内置 **路径穿越 (Path Traversal)** 拦截，确保系统环境安全。
+- **自定义线切割**：超越简单的网格，支持在任意像素位置进行横向或纵向的精确分割。
+- **画布高级调整**：支持画布扩充 (Padding)、裁剪 (Cropping) 及自定义背景色填充。
+- **指令控制台 (Console)**：GUI 实时记录操作指令，方便学习与脚本复用。
 
 ## 🚀 快速开始
+
 1. **安装环境**：
    ```bash
    pip install Pillow
@@ -26,15 +28,18 @@
    python cli.py test.png -r 3 -c 3 -o ./output -j 8
    ```
 
+## 📦 插件库 (Processors)
+- `grid_splitter`: 基础网格分割。
+- `custom_splitter`: 自定义坐标分割。
+- `resizer`: 通用图像缩放。
+- `canvas_adjuster`: 画布边界调整与填充。
+
 ## 📝 命名模板占位符
 - `{filename}`: 原始文件名（不含扩展名）
-- `{row}`: 当前行号 (1开始)
-- `{col}`: 当前列号 (1开始)
+- `{row}` / `{col}`: 当前行号/列号 (1开始)
 - `{index}`: 全局序号 (01开始)
-- `{ext}`: 文件原始后缀 (如 png, jpg)
+- `{ext}`: 文件后缀
+- `{x_start}` / `{y_start}`: 起始像素坐标 (仅部分插件支持)
 
-## 📦 打包指南 (Windows)
-```bash
-pip install pyinstaller
-pyinstaller --noconsole --onefile gui.py
-```
+## 🛠 开发扩展
+本项目支持极简的插件开发。只需继承 `BaseProcessor` 并实现逻辑，即可自动获得 CLI 支持与 GUI 自动渲染面板。详情请参阅 [DEVELOPER.md](./DEVELOPER.md)。
