@@ -1,20 +1,11 @@
 # image_splitter/processors/resizer.py
 from PIL import Image
 from typing import List, Dict, Any, Tuple
-from engine.base import BaseProcessor, BaseConfig
-from dataclasses import dataclass
-
-@dataclass
-class ResizeConfig(BaseConfig):
-    width: int
-    height: int
-    def validate(self):
-        if self.width <= 0 or self.height <= 0:
-            raise ValueError("Width and Height must be positive.")
+from image_splitter.engine.base import BaseProcessor
 
 class ImageResizer(BaseProcessor):
     """
-    通用缩放处理器
+    调整图片尺寸处理器
     """
     @property
     def name(self) -> str:
@@ -22,10 +13,29 @@ class ImageResizer(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "图片缩放 (Resizer)"
+        return "比例缩放 (Image Resizer)"
 
-    def process(self, image: Image.Image, config: ResizeConfig) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        new_img = image.resize((config.width, config.height), Image.Resampling.LANCZOS)
-        # 对于缩放，通常只返回一张图
-        context = {"action": "resized", "w": config.width, "h": config.height}
+    def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        if isinstance(config, dict):
+            width = float(config.get("width", 1.0))
+            height = float(config.get("height", 1.0))
+        else:
+            width, height = float(config.width), float(config.height)
+
+        orig_w, orig_h = image.size
+        # 如果是 float 则视为比例，int 则视为绝对像素 (在这里我们统一处理为比例，或者根据输入类型判断)
+        # 为了简单，我们目前仅支持比例
+        target_w = int(orig_w * width)
+        target_h = int(orig_h * height)
+        
+        new_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
+        
+        context = {
+            "action": "resized",
+            "orig_w": orig_w,
+            "orig_h": orig_h,
+            "target_w": target_w,
+            "target_h": target_h
+        }
+        
         return [(new_img, context)]

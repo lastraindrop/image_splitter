@@ -1,8 +1,8 @@
 # image_splitter/processors/splitter.py
+import ast
 from PIL import Image
 from typing import List, Dict, Any, Tuple
-from engine.base import BaseProcessor
-from models import SplitConfig
+from image_splitter.engine.base import BaseProcessor
 
 class GridSplitter(BaseProcessor):
     """
@@ -16,6 +16,10 @@ class GridSplitter(BaseProcessor):
     def display_name(self) -> str:
         return "网格切割 (Grid Splitter)"
 
+    @property
+    def category(self) -> str:
+        return "Split"
+
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
             {"name": "rows", "label": "行数", "type": "int", "default": 3},
@@ -24,20 +28,20 @@ class GridSplitter(BaseProcessor):
         ]
 
     def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """
-        支持配置类或简单的参数字典
-        """
-        # 允许通过字典传参 (例如从 CLI 解析出来的 props)
         if isinstance(config, dict):
-            rows = config.get("rows", 1)
-            cols = config.get("cols", 1)
-            offsets = config.get("offsets", (0, 0, 0, 0))
-            if isinstance(offsets, str):
-                # 尝试解析 [0,0,0,0] 格式
-                offsets = eval(offsets)
+            rows = int(config.get("rows", 1))
+            cols = int(config.get("cols", 1))
+            off_val = config.get("offsets", (0, 0, 0, 0))
+            if isinstance(off_val, str):
+                 try:
+                    offsets = ast.literal_eval(off_val)
+                 except:
+                    raise ValueError(f"无法解析偏移量字符串: {off_val}")
+            else:
+                offsets = off_val
         else:
-            rows = config.rows
-            cols = config.cols
+            rows = int(config.rows)
+            cols = int(config.cols)
             offsets = config.offsets
 
         # 1. 应用偏移量
@@ -66,7 +70,6 @@ class GridSplitter(BaseProcessor):
                     
                 cell = img.crop((left, upper, right, lower))
                 
-                # 为模板渲染提供的上下文
                 context = {
                     "row": i + 1,
                     "col": j + 1,
@@ -76,3 +79,31 @@ class GridSplitter(BaseProcessor):
                 count += 1
                 
         return results
+
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+        try:
+            def get_val(key, default=0):
+                val = props.get(key).get().strip()
+                try: return ast.literal_eval(val) if val else default
+                except: return default
+
+            rows = max(1, int(get_val("rows", 1)))
+            cols = max(1, int(get_val("cols", 1)))
+            offsets = get_val("offsets", (0, 0, 0, 0))
+            
+            cw, ch = thumb_size
+            x0, y0 = canvas_pos
+            
+            cx1, cy1 = x0 + int(offsets[0] * ratio), y0 + int(offsets[1] * ratio)
+            cx2, cy2 = x0 + cw - int(offsets[2] * ratio), y0 + ch - int(offsets[3] * ratio)
+            
+            if cx2 > cx1 and cy2 > cy1:
+                canvas.create_rectangle(cx1, cy1, cx2, cy2, outline=theme.ACCENT, width=2, dash=(4,4), tags="overlay")
+                for i in range(1, rows):
+                    y = cy1 + (cy2 - cy1) * i / rows
+                    canvas.create_line(cx1, y, cx2, y, fill=theme.INFO, tags="overlay")
+                for j in range(1, cols):
+                    x = cx1 + (cx2 - cx1) * j / cols
+                    canvas.create_line(x, cy1, x, cy2, fill=theme.INFO, tags="overlay")
+        except:
+            pass

@@ -4,8 +4,8 @@ import os
 import tempfile
 from PIL import Image
 from pathlib import Path
-from models import AdjustConfig
-from core import process_image
+from image_splitter.models import AdjustConfig
+from image_splitter.core import process_image
 
 class TestCanvasAdjuster(unittest.TestCase):
     def setUp(self):

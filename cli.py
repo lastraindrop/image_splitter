@@ -1,81 +1,83 @@
+# image_splitter/cli.py
 import argparse
-import sys
 import os
-import glob
+import sys
 import multiprocessing
+import glob
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
-
-# 确保在 cli 脚本所在目录外运行时也能正确找到核心模块
-project_root = str(Path(__file__).resolve().parent)
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-from core import split_image_core
-from models import SplitConfig
-from typing import List, Tuple
+from image_splitter.core import split_image_core
+from image_splitter.models import SplitConfig
 
 def main():
-    parser = argparse.ArgumentParser(description="网格图片切割工具 (高性能 CLI 版)")
+    parser = argparse.ArgumentParser(description="高性能图像网格切割工具 (CLI 版)")
     
-    # 输入支持多个文件或通配符
-    parser.add_argument("input", nargs="+", help="输入图片路径、通配符或目录")
+    # 核心参数
+    parser.add_argument("input", help="输入文件、目录或通配符路径 (如: ./pics/*.png)")
+    parser.add_argument("-o", "--output", default="./output", help="输出目录 (默认: ./output)")
+    
+    # 切割布局参数
     parser.add_argument("-r", "--rows", type=int, required=True, help="切割的行数")
-    parser.add_argument("-c", "--cols", type=int, required=True, help="切割的列数")
-    parser.add_argument("-o", "--output", default="./output", help="输出文件夹路径 (默认: ./output)")
-    parser.add_argument("-t", "--template", default="{filename}_{index}", help="命名模板 (默认: {filename}_{index})")
-    parser.add_argument("--offset", nargs=4, type=int, default=[0, 0, 0, 0], metavar=('L', 'T', 'R', 'B'), help="边缘偏移量: 左 上 右 下")
-    parser.add_argument("--recursive", action="store_true", help="如果是目录，则递归处理")
-    default_jobs = os.cpu_count() or 1
-    parser.add_argument("-j", "--jobs", type=int, default=default_jobs, help=f"并行任务数 (默认: {default_jobs})")
+    parser.add_argument("-c", "--cols", type=int, required=True, help="切割列数")
     
+    # 高级参数
+    parser.add_argument("--offset", type=int, nargs=4, default=[0, 0, 0, 0], 
+                        help="边缘偏移量: 左 上 右 下 (像素)")
+    parser.add_argument("-t", "--template", default="{filename}_{index}", 
+                        help="输出文件名模板 (默认: {filename}_{index})")
+    parser.add_argument("-j", "--jobs", type=int, default=multiprocessing.cpu_count(),
+                        help="并行进程数 (默认: CPU 核心数)")
+    parser.add_argument("--recursive", action="store_true", help="是否递归搜索子目录")
+
     args = parser.parse_args()
-    
+
+    # 1. 环境检查与输入解析
+    input_files = []
     output_dir = Path(args.output).resolve()
     
-    # 解析输入路径
-    raw_input_files = []
-    extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
+    # 允许的后缀
+    exts = ["jpg", "jpeg", "png", "bmp", "webp"]
     
-    for item in args.input:
-        item_path = Path(item)
-        if item_path.is_dir():
-            pattern = "**/*" if args.recursive else "*"
-            found = item_path.glob(pattern)
-            raw_input_files.extend([f.resolve() for f in found if f.suffix.lower() in extensions])
-        elif "*" in item or "?" in item:
-            # 处理通配符
-            found = glob.glob(item, recursive=args.recursive)
-            raw_input_files.extend([
-                Path(f).resolve() for f in found 
-                if Path(f).is_file() and Path(f).suffix.lower() in extensions
-            ])
-        else:
-            if item_path.exists():
-                raw_input_files.append(item_path.resolve())
-            
-    # 去重并过滤掉已经在输出目录下的文件 (防无限递归)
-    unique_files = sorted(list(set(raw_input_files)))
-    input_files = []
-    for f in unique_files:
-        try:
-            # 如果 f 在 output_dir 下，relative_to 不会抛出异常
-            f.relative_to(output_dir)
-        except ValueError:
-            # 不在 output_dir 下，属于需要保留的输入文件
-            input_files.append(f)
-    
+    # 首先检查是否是直接存在的目录/文件
+    p = Path(args.input)
+    if p.is_dir():
+        pattern = "**/*" if args.recursive else "*"
+        for ext in exts:
+            input_files.extend(p.glob(f"{pattern}.{ext}"))
+            input_files.extend(p.glob(f"{pattern}.{ext.upper()}"))
+    elif p.is_file():
+        input_files.append(p)
+    else:
+        # 尝试通配符解析
+        glob_matches = glob.glob(args.input, recursive=args.recursive)
+        for g in glob_matches:
+            gp = Path(g)
+            if gp.is_file():
+                if gp.suffix.lower().lstrip('.') in exts:
+                    input_files.append(gp)
+            elif gp.is_dir() and args.recursive:
+                 for ext in exts:
+                    input_files.extend(gp.glob(f"**/*.{ext}"))
+                    input_files.extend(gp.glob(f"**/*.{ext.upper()}"))
+
+    # 去重并排序
+    input_files = sorted(list(set(input_files)))
+
+    # 过滤掉输出目录及其子目录内的文件（防止死循环）
+    try:
+        input_files = [f for f in input_files if not f.resolve().is_relative_to(output_dir)]
+    except ValueError:
+        pass
+
     if not input_files:
-        print("❌ 未找到有效的图片文件。")
+        print(f"💡 未找到有效的图片文件: {args.input}")
         sys.exit(1)
-        
-    print(f"🚀 准备处理 {len(input_files)} 个文件 (并发数: {args.jobs})...")
-    
+
+    print(f"🚀 准备处理 {len(input_files)} 个文件 (并发数: {args.jobs})...\n")
+
     offsets = tuple(args.offset)
     total_success = 0
-    
-    # 使用进程池加速 CPU 密集型切割任务
-    # 注意: Windows 下 ProcessPoolExecutor 需要在 if __name__ == "__main__" 下运行，这里 main 已经被包裹
+
     config = SplitConfig(
         rows=args.rows,
         cols=args.cols,
@@ -83,23 +85,21 @@ def main():
         template=args.template,
         offsets=offsets
     )
-    
+
+    # 2. 并行执行处理
     with ProcessPoolExecutor(max_workers=args.jobs) as executor:
-        # 准备并分发任务
-        # 使用 list comprehension 一次性提交所有任务
         futures = [executor.submit(split_image_core, str(f), config) for f in input_files]
-        
-        # 按提交顺序收集并报告结果 (保持日志整齐)
+
         for f_path, future in zip(input_files, futures):
             try:
                 success, msg = future.result()
-                status = "✅" if success else "❌"
+                status = "[OK]" if success else "[FAIL]"
                 print(f"{status} {f_path.name}: {msg}")
                 if success:
                     total_success += 1
             except Exception as e:
-                print(f"❌ {f_path.name}: 运行时异常 - {e}")
-        
+                print(f"[FAIL] {f_path.name}: 运行时异常 - {e}")
+
     print("-" * 30)
     print(f"🏁 完成！成功: {total_success} / 总计: {len(input_files)}")
     

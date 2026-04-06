@@ -1,8 +1,8 @@
 # image_splitter/tests/test_dispatcher.py
 import unittest
 from PIL import Image
-from engine.dispatcher import CommandDispatcher
-from core import split_image_core # 确保注册了处理器
+from image_splitter.engine.dispatcher import CommandDispatcher
+from image_splitter.core import split_image_core # 确保注册了处理器
 
 class TestDispatcher(unittest.TestCase):
     def test_parse_simple(self):

@@ -1,12 +1,13 @@
 # image_splitter/processors/custom_splitter.py
+import ast
 from PIL import Image
 from typing import List, Dict, Any, Tuple
-from engine.base import BaseProcessor
-from models import CustomSplitConfig
+from image_splitter.engine.base import BaseProcessor
+from image_splitter.models import CustomSplitConfig
 
 class CustomLineSplitter(BaseProcessor):
     """
-    自定义线条切割处理器插件
+    基于自定义坐标线的切割处理器
     """
     @property
     def name(self) -> str:
@@ -14,45 +15,35 @@ class CustomLineSplitter(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "自定义线切割 (Custom Splitter)"
+        return "比例切割 (Custom Lines)"
 
-    def process(self, image: Image.Image, config: CustomSplitConfig) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        # 1. 应用偏移量
-        orig_w, orig_h = image.size
-        l_off, t_off, r_off, b_off = config.offsets
-        img = image.crop((l_off, t_off, orig_w - r_off, orig_h - b_off))
-        w, h = img.size
+    def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        if isinstance(config, dict):
+            h_lines = config.get("h_lines", [])
+            v_lines = config.get("v_lines", [])
+            if isinstance(h_lines, str): h_lines = ast.literal_eval(h_lines)
+            if isinstance(v_lines, str): v_lines = ast.literal_eval(v_lines)
+        else:
+            h_lines, v_lines = config.h_lines, config.v_lines
 
-        # 2. 准备坐标轴并排序
-        # 过滤掉超出图片范围的线，并加入边界 [0, ..., max]
-        y_coords = sorted(list(set([0, h] + [y for y in config.h_lines if 0 < y < h])))
-        x_coords = sorted(list(set([0, w] + [x for x in config.v_lines if 0 < x < w])))
-
+        w, h = image.size
+        # 生成边界点并去重排序: [0, y1, y2, ..., h]
+        y_points = sorted(list(set([0, h] + [y for y in h_lines if 0 < y < h])))
+        x_points = sorted(list(set([0, w] + [x for x in v_lines if 0 < x < w])))
+        
         results = []
         count = 1
-        
-        # 3. 嵌套循环切割
-        # Y 轴区间 (行)
-        for i in range(len(y_coords) - 1):
-            y_start, y_end = y_coords[i], y_coords[i+1]
-            
-            # X 轴区间 (列)
-            for j in range(len(x_coords) - 1):
-                x_start, x_end = x_coords[j], x_coords[j+1]
+        for i in range(len(y_points) - 1):
+            for j in range(len(x_points) - 1):
+                left, upper = x_points[j], y_points[i]
+                right, lower = x_points[j+1], y_points[i+1]
                 
-                # 执行裁剪
-                cell = img.crop((x_start, y_start, x_end, y_end))
-                
+                cell = image.crop((left, upper, right, lower))
                 context = {
                     "row": i + 1,
                     "col": j + 1,
-                    "index": str(count).zfill(2),
-                    "x_start": x_start,
-                    "y_start": y_start,
-                    "width": x_end - x_start,
-                    "height": y_end - y_start
+                    "index": str(count).zfill(2)
                 }
-                
                 results.append((cell, context))
                 count += 1
                 

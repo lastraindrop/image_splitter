@@ -1,503 +1,311 @@
-# gui.py
-import os
+# image_splitter/gui.py
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-import subprocess
+import os
+import ast
 import platform
-import time
+import subprocess
 from PIL import Image, ImageTk
-from core import split_image_core
-from models import SplitConfig
-from typing import List, Optional, Tuple
+from image_splitter.core import process_image, register_all_processors
+from image_splitter.engine.registry import ProcessorRegistry
 
 class UITheme:
-    """统一颜色与样式配置"""
-    PRIMARY = "#1A73E8"     # Google Blue
-    ACCENT = "#D93025"      # Google Red
-    SUCCESS = "#1E8E3E"     # Google Green
-    INFO = "#00B0FF"        # Azure
-    BG_LIGHT = "#F8F9FA"    # Soft Gray
-    BG_CANVAS = "#202124"   # Dark Mode Canvas (more premium)
-    TEXT_MAIN = "#202124"
-    TEXT_SUB = "#5F6368"
-    BORDER = "#DADCE0"
-    # 跨平台字体建议
-    FONT_BOLD = ("Microsoft YaHei", "Segoe UI", "Helvetica", 11, "bold")
-    FONT_NORMAL = ("Microsoft YaHei", "Segoe UI", "Helvetica", 9)
-    FONT_TITLE = ("Microsoft YaHei", "Segoe UI", "Helvetica", 10, "bold")
+    """主题配置"""
+    DARK_BG = "#1e1e1e"
+    DARK_FG = "#d4d4d4"
+    ACCENT = "#007acc"
+    PRIMARY = "#3b82f6"
+    SUCCESS = "#10b981"
+    INFO = "#3b82f6"
+    PANEL_BG = "#252526"
 
 class ImageSplitterApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root):
         self.root = root
-        self.root.title("通用图像处理平台 v3.0 - Operator Engine")
-        self.root.geometry("1150x750")
-        self.root.minsize(900, 650)
-        
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
-        
-        # 数据变量
-        self.input_paths: List[str] = [] 
-        self.output_dir = tk.StringVar()
-        self.template_var = tk.StringVar(value="{filename}_{index}")
-        
-        # 动态属性存储 (Blender 式属性面板)
-        self.dynamic_vars: Dict[str, tk.StringVar] = {}
-        self.active_processor_name = tk.StringVar()
-        
-        # 预览相关
-        self.current_orig_size: Tuple[int, int] = (0, 0)
-        self.thumb_img: Optional[Image.Image] = None
-        self.preview_ratio: float = 1.0
-        self._resize_after_id: Optional[str] = None
-        
-        self.stop_event = threading.Event()
+        self.root.title("Image Splitter Pro - 图像处理增强版")
+        self.root.geometry("1100x750")
         self.theme = UITheme()
         
-        self.setup_ui()
-        self.bind_shortcuts()
+        # 1. 状态管理
+        self.current_files = []
+        self.current_orig_size = (0, 0)
+        self.thumb_img = None
+        self.tk_thumb = None
+        self.preview_ratio = 1.0
+        self.stop_event = threading.Event()
+        self.dynamic_vars = {}
+        
+        # 2. 自动注册
+        register_all_processors()
+        
+        # 3. 初始化 UI
+        self._setup_style()
+        self._create_widgets()
 
-    def bind_shortcuts(self):
-        self.root.bind("<Return>", lambda e: self.run_batch())
-        self.file_listbox.bind("<Delete>", lambda e: self.remove_selected_file())
-        self.root.bind("<Control-a>", lambda e: self.file_listbox.select_set(0, tk.END))
+    def _setup_style(self):
+        self.root.configure(bg=self.theme.DARK_BG)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure("TFrame", background=self.theme.DARK_BG)
+        style.configure("TLabel", background=self.theme.DARK_BG, foreground=self.theme.DARK_FG, font=("Microsoft YaHei UI", 10))
+        style.configure("Primary.TButton", background=self.theme.PRIMARY, foreground="white", font=("Microsoft YaHei UI", 10, "bold"))
+        style.map("Primary.TButton", background=[('active', '#2563eb')])
 
-    def setup_ui(self):
-        main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # --- 左侧控制区 ---
-        left_frame = ttk.Frame(main_paned)
-        main_paned.add(left_frame, weight=1)
-        
-        # 1. 任务选择与文件
-        task_lf = ttk.LabelFrame(left_frame, text="1. 任务流配置 (Taskflow)", padding=10)
-        task_lf.pack(fill=tk.X, padx=5, pady=5)
+    def _create_widgets(self):
+        # 左右分栏
+        self.paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
+        self.paned.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(task_lf, text="当前操作符 (Active Operator):", font=self.theme.FONT_BOLD).pack(anchor=tk.W)
-        self.proc_combo = ttk.Combobox(task_lf, textvariable=self.active_processor_name, state="readonly")
-        from engine.registry import ProcessorRegistry
-        processors = ProcessorRegistry.list_all()
-        self.proc_combo['values'] = [p.display_name for p in processors]
-        self.proc_combo.current(0)
-        self.proc_combo.pack(fill=tk.X, pady=(2, 10))
-        self.proc_combo.bind("<<ComboboxSelected>>", self.on_processor_change)
+        # --- 左侧控制面板 ---
+        self.left_panel = tk.Frame(self.paned, bg=self.theme.PANEL_BG, width=320)
+        self.paned.add(self.left_panel, weight=0)
 
-        btn_group = ttk.Frame(task_lf)
-        btn_group.pack(fill=tk.X)
-        ttk.Button(btn_group, text="➕ 添加素材", command=self.select_files).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_group, text="📁 导入目录", command=self.select_folder_input).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_group, text="🗑️ 清空", command=self.clear_files, width=5).pack(side=tk.LEFT, padx=2)
-        
-        self.file_listbox = tk.Listbox(task_lf, height=6, selectmode=tk.BROWSE, font=self.theme.FONT_NORMAL)
-        self.file_listbox.pack(fill=tk.X, pady=5)
-        self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
+        # 标题
+        tk.Label(self.left_panel, text="操作配置", font=("Microsoft YaHei UI", 12, "bold"), 
+                 bg=self.theme.PANEL_BG, fg=self.theme.PRIMARY).pack(pady=15, padx=20, anchor=tk.W)
 
-        # 2. 动态参数面板 (Properties Panel)
-        self.params_lf = ttk.LabelFrame(left_frame, text="2. 操作参数 (Properties)", padding=10)
-        self.params_lf.pack(fill=tk.X, padx=5, pady=5)
-        self.build_dynamic_params()
+        # 处理器选择
+        tk.Label(self.left_panel, text="选择功能:", bg=self.theme.PANEL_BG).pack(padx=20, anchor=tk.W)
+        self.active_processor_name = tk.StringVar()
+        processors = [p.display_name for p in ProcessorRegistry.list_all()]
+        self.processor_combo = ttk.Combobox(self.left_panel, textvariable=self.active_processor_name, values=processors, state="readonly")
+        self.processor_combo.pack(fill=tk.X, padx=20, pady=5)
+        self.processor_combo.bind("<<ComboboxSelected>>", self._on_processor_changed)
+        if processors: self.processor_combo.current(0)
 
-        # 3. 输出配置
-        out_lf = ttk.LabelFrame(left_frame, text="3. 输出策略 (Export)", padding=10)
-        out_lf.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttk.Label(out_lf, text="命名模板:").pack(anchor=tk.W)
-        ttk.Entry(out_lf, textvariable=self.template_var).pack(fill=tk.X, pady=2)
-        
-        ttk.Label(out_lf, text="输出目录:").pack(anchor=tk.W, pady=(10, 0))
-        out_sel = ttk.Frame(out_lf)
-        out_sel.pack(fill=tk.X)
-        ttk.Entry(out_sel, textvariable=self.output_dir).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(out_sel, text="...", width=3, command=self.select_output).pack(side=tk.LEFT, padx=2)
-        
-        # 4. 指令日志区
-        console_lf = ttk.LabelFrame(left_frame, text="指令控制台 (Log/Console)", padding=5)
-        console_lf.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.console_text = tk.Text(console_lf, height=4, font=("Consolas", 9), bg="#1e1e1e", fg="#00FF00", padx=5, pady=5)
-        self.console_text.pack(fill=tk.BOTH, expand=True)
+        # 动态参数容器
+        self.props_frame = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG)
+        self.props_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
 
-        # 执行区域
-        action_f = ttk.Frame(left_frame, padding=5)
-        action_f.pack(fill=tk.X, side=tk.BOTTOM)
+        # 默认保存选项
+        tk.Label(self.left_panel, text="输出配置:", bg=self.theme.PANEL_BG, fg=self.theme.PRIMARY).pack(padx=20, pady=(15, 5), anchor=tk.W)
         
-        self.btn_run = tk.Button(
-            action_f, text="🚀 运行操作 (Run Operator)", command=self.run_batch, 
-            bg=self.theme.PRIMARY, fg="white", font=self.theme.FONT_BOLD, 
-            height=2, activebackground="#174EA6", relief=tk.FLAT
-        )
-        self.btn_run.pack(fill=tk.X, pady=(10, 2))
-        
-        self.progress = ttk.Progressbar(action_f, mode='determinate')
-        self.progress.pack(fill=tk.X)
-        self.status_label = ttk.Label(action_f, text="等待输入...", foreground=self.theme.TEXT_SUB)
-        self.status_label.pack(pady=5)
+        tk.Label(self.left_panel, text="命名模板:", bg=self.theme.PANEL_BG).pack(padx=20, anchor=tk.W)
+        self.template_var = tk.StringVar(value="{filename}_{index}")
+        tk.Entry(self.left_panel, textvariable=self.template_var, bg=self.theme.DARK_BG, fg="white", insertbackground="white").pack(fill=tk.X, padx=20, pady=5)
 
-        # --- 右侧预览区 ---
-        right_frame = ttk.Frame(main_paned)
-        main_paned.add(right_frame, weight=2)
+        # 底部按钮区
+        self.bottom_btn_frame = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG)
+        self.bottom_btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=20, padx=20)
         
-        self.info_label = ttk.Label(right_frame, text="实时画布预览", font=self.theme.FONT_TITLE)
+        self.btn_run = ttk.Button(self.bottom_btn_frame, text="🚀 运行任务", style="Primary.TButton", command=self.run_batch)
+        self.btn_run.pack(fill=tk.X, pady=5)
+        
+        self.btn_stop = ttk.Button(self.bottom_btn_frame, text="⏹ 停止运行", state=tk.DISABLED, command=self.stop_tasks)
+        self.btn_stop.pack(fill=tk.X, pady=5)
+
+        # --- 右侧预览与列表 ---
+        self.right_container = tk.Frame(self.paned, bg=self.theme.DARK_BG)
+        self.paned.add(self.right_container, weight=1)
+
+        # 画布与图片信息
+        self.preview_frame = tk.Frame(self.right_container, bg=self.theme.DARK_BG, bd=1, relief=tk.SOLID)
+        self.preview_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        self.info_label = tk.Label(self.preview_frame, text="请先选择图片文件", fg=self.theme.DARK_FG)
         self.info_label.pack(pady=5)
-        
-        self.canvas = tk.Canvas(right_frame, bg=self.theme.BG_CANVAS, highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.canvas = tk.Canvas(self.preview_frame, bg="#101010", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-    def build_dynamic_params(self):
-        """核心：动态构建 UI 参数组件"""
-        for widget in self.params_lf.winfo_children():
-            widget.destroy()
-            
-        from engine.registry import ProcessorRegistry
+        # 文件列表区
+        self.list_frame = tk.Frame(self.right_container, bg=self.theme.DARK_BG, height=150)
+        self.list_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        self.btn_select = ttk.Button(self.list_frame, text="📂 选择图片 (支持多选/拖入)", command=self.select_files)
+        self.btn_select.pack(side=tk.TOP, fill=tk.X)
+        
+        self.file_listbox = tk.Listbox(self.list_frame, bg=self.theme.PANEL_BG, fg=self.theme.DARK_FG, 
+                                       borderwidth=0, height=5, selectbackground=self.theme.ACCENT)
+        self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
+        self.file_listbox.bind("<<ListboxSelect>>", self._on_file_selected)
+
+        # 进度条
+        self.progress_var = tk.DoubleVar()
+        self.progress = ttk.Progressbar(self.right_container, length=100, mode='determinate', variable=self.progress_var)
+        self.progress.pack(fill=tk.X, padx=20, pady=10)
+        
+        self.status_label = tk.Label(self.right_container, text="就绪", font=("Consolas", 9))
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20)
+
+        # 初始化参数列表
+        self._on_processor_changed()
+
+    def _on_processor_changed(self, event=None):
+        """当处理器切换时，动态生成 UI 参数组件"""
+        for child in self.props_frame.winfo_children():
+             child.destroy()
+        self.dynamic_vars = {}
+
         display_name = self.active_processor_name.get()
         processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
         if not processor: return
 
-        self.dynamic_vars = {}
-        meta = processor.get_ui_metadata()
-        
-        for i, item in enumerate(meta):
-            name, label, default = item["name"], item["label"], item["default"]
-            ttk.Label(self.params_lf, text=f"{label}:").grid(row=i, column=0, sticky=tk.W, pady=3)
-            var = tk.StringVar(value=str(default))
-            self.dynamic_vars[name] = var
-            ttk.Entry(self.params_lf, textvariable=var, width=25).grid(row=i, column=1, padx=10, sticky=tk.W)
-            var.trace_add("write", lambda *args: self.fast_update_preview())
-            var.trace_add("write", lambda *args: self.log_operator())
+        for meta in processor.get_ui_metadata():
+            frame = tk.Frame(self.props_frame, bg=self.theme.PANEL_BG)
+            frame.pack(fill=tk.X, pady=2)
+            tk.Label(frame, text=meta["label"], bg=self.theme.PANEL_BG, font=("Microsoft YaHei UI", 9)).pack(side=tk.LEFT)
+            
+            var = tk.StringVar(value=str(meta["default"]))
+            self.dynamic_vars[meta["name"]] = var
+            # 实时更新预览
+            entry = tk.Entry(frame, textvariable=var, bg=self.theme.DARK_BG, fg="white", width=12, insertbackground="white")
+            entry.pack(side=tk.RIGHT)
+            entry.bind("<KeyRelease>", lambda e: self.fast_update_preview())
 
-        self.log_operator()
-
-    def on_processor_change(self, event):
-        self.build_dynamic_params()
         self.fast_update_preview()
 
-    def log_operator(self):
-        """同步显示 Blender 式指令"""
-        from engine.registry import ProcessorRegistry
+    def run_batch(self):
+        if not self.current_files:
+            messagebox.showwarning("提示", "请先选择需要处理的图片")
+            return
+            
+        output_dir = filedialog.askdirectory(title="选择输出保存目录")
+        if not output_dir: return
+
+        # 构建配置
         display_name = self.active_processor_name.get()
         processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
         if not processor: return
+
+        config = {k: v.get() for k, v in self.dynamic_vars.items()}
+        config["output_dir"] = output_dir
+        config["template"] = self.template_var.get()
         
-        params = [f"{k}={v.get()}" for k, v in self.dynamic_vars.items()]
-        cmd = f"bpy.ops.{processor.name}({', '.join(params)})"
-        self.console_text.delete("1.0", tk.END)
-        self.console_text.insert(tk.END, cmd)
-
-    def run_batch(self):
-        if not self.input_paths:
-            messagebox.showwarning("提示", "请先添加图片素材")
-            return
-
-        # 动态构造参数
-        props = {}
-        for k, v in self.dynamic_vars.items():
-            val = v.get().strip()
-            try:
-                if val.isdigit(): props[k] = int(val)
-                elif val.replace('.', '', 1).isdigit(): props[k] = float(val)
-                elif val.startswith("(") or val.startswith("["): props[k] = eval(val)
-                else: props[k] = val
-            except: props[k] = val
-
-        props["output_dir"] = self.output_dir.get()
-        props["template"] = self.template_var.get()
-        
-        from engine.registry import ProcessorRegistry
-        display_name = self.active_processor_name.get()
-        processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
-
         self.btn_run.config(state=tk.DISABLED)
-        self.progress['value'] = 0
-        self.progress['maximum'] = len(self.input_paths)
-        
+        self.btn_stop.config(state=tk.NORMAL)
         self.stop_event.clear()
-        threading.Thread(target=self.work_thread, args=(list(self.input_paths), processor.name, props), daemon=True).start()
+        
+        threading.Thread(target=self.work_thread, args=(processor.name, config, output_dir), daemon=True).start()
 
-    def work_thread(self, paths, proc_name, props):
-        from core import process_image
+    def work_thread(self, p_name, config, output_dir):
+        total = len(self.current_files)
         success_count = 0
         
-        for i, path in enumerate(paths):
-            if self.stop_event.is_set(): break
+        from image_splitter.core import batch_process_images
+        
+        for i, (path, is_success, msg) in enumerate(batch_process_images(self.current_files, p_name, config)):
+            if self.stop_event.is_set():
+                self.root.after(0, lambda: self.finish_report(success_count, total, True))
+                return
+
+            if is_success: success_count += 1
             
-            if self.root.winfo_exists():
-                self.root.after(0, lambda p=path: self.status_label.config(text=f"正在执行: {os.path.basename(p)}"))
-            
-            success, _ = process_image(path, proc_name, props)
-            if success: success_count += 1
-            
-            if self.root.winfo_exists():
-                self.root.after(0, lambda: self.progress.step(1))
-            
-        if self.root.winfo_exists():
-            self.root.after(0, lambda: self.finish_report(success_count, len(paths)))
+            progress = (i + 1) / total * 100
+            self.root.after(0, lambda p=progress, m=msg: self.update_progress(p, m))
+
+        self.root.after(0, lambda: self.finish_report(success_count, total))
+        # 完成后尝试打开目录
+        try: os.startfile(output_dir) if platform.system() == "Windows" else None
+        except: pass
+
+    def update_progress(self, p, msg):
+        self.progress_var.set(p)
+        self.status_label.config(text=msg)
+
+    def stop_tasks(self):
+        if messagebox.askyesno("停止", "确定要中断正在运行的任务吗？"):
+            self.stop_event.set()
+            self.status_label.config(text="正在停止...")
 
     def fast_update_preview(self):
+        """核心：通过操作符自带的渲染逻辑重绘预览"""
         if not self.thumb_img: return
         self.canvas.delete("overlay")
         
-        if self.active_processor_name.get() == "网格切割 (Grid Splitter)":
-            try:
-                rows = int(self.dynamic_vars.get("rows").get() or 1)
-                cols = int(self.dynamic_vars.get("cols").get() or 1)
-                off_val = self.dynamic_vars.get("offsets").get() or "(0,0,0,0)"
-                offsets = eval(off_val)
-                
-                cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
-                nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
-                x0, y0 = (cw - nw) // 2, (ch - nh) // 2
-                
-                cx1, cy1 = x0 + int(offsets[0] * self.preview_ratio), y0 + int(offsets[1] * self.preview_ratio)
-                cx2, cy2 = x0 + nw - int(offsets[2] * self.preview_ratio), y0 + nh - int(offsets[3] * self.preview_ratio)
-                
-                if cx2 > cx1 and cy2 > cy1:
-                    self.canvas.create_rectangle(cx1, cy1, cx2, cy2, outline=self.theme.ACCENT, width=2, dash=(4,4), tags="overlay")
-                    for i in range(1, rows):
-                        y = cy1 + (cy2 - cy1) * i / rows
-                        self.canvas.create_line(cx1, y, cx2, y, fill=self.theme.INFO, tags="overlay")
-                    for j in range(1, cols):
-                        x = cx1 + (cx2 - cx1) * j / cols
-                        self.canvas.create_line(x, cy1, x, cy2, fill=self.theme.INFO, tags="overlay")
-            except: pass
+        display_name = self.active_processor_name.get()
+        processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
+        if not processor: return
+
+        # 尺寸与位置计算
+        cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
+        nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
+        x0, y0 = (cw - nw) // 2, (ch - nh) // 2
+
+        # 调用处理器自身的绘制逻辑
+        processor.draw_preview(
+            self.canvas, 
+            thumb_size=(nw, nh), 
+            canvas_pos=(x0, y0), 
+            ratio=self.preview_ratio, 
+            props=self.dynamic_vars, 
+            theme=self.theme
+        )
+
     def select_files(self):
-        file_types = [
-            ("Images", "*.jpg *.jpeg *.png *.bmp *.webp"),
-            ("JPEG", "*.jpg *.jpeg"),
-            ("PNG", "*.png"),
-            ("BMP", "*.bmp"),
-            ("WebP", "*.webp"),
-            ("All Files", "*.*")
-        ]
-        paths = filedialog.askopenfilenames(title="选择图片", filetypes=file_types)
-        if paths:
-            new_paths = [p for p in paths if p not in self.input_paths]
-            self.input_paths.extend(new_paths)
-            self.refresh_file_list()
+        file_types = [("Images", "*.jpg *.jpeg *.png *.bmp *.webp"), ("All Files", "*.*")]
+        files = filedialog.askopenfilenames(title="选择图片", filetypes=file_types)
+        if files:
+            self.current_files = list(files)
+            self.file_listbox.delete(0, tk.END)
+            for f in self.current_files:
+                 self.file_listbox.insert(tk.END, os.path.basename(f))
+            self.file_listbox.selection_set(0)
+            self._on_file_selected()
 
-    def select_folder_input(self):
-        folder = filedialog.askdirectory()
-        if folder:
-            exts = ('.jpg', '.jpeg', '.png', '.bmp', '.webp')
-            existing = set(self.input_paths)
-            for dir_root, _, files in os.walk(folder):
-                for f in files:
-                    if f.lower().endswith(exts):
-                        full_path = os.path.join(dir_root, f)
-                        if full_path not in existing:
-                            self.input_paths.append(full_path)
-                            existing.add(full_path)
-            self.refresh_file_list()
-
-    def clear_files(self):
-        self.input_paths = []
-        self.thumb_img = None
-        self.refresh_file_list()
-        self.canvas.delete("all")
-
-    def refresh_file_list(self):
-        self.file_listbox.delete(0, tk.END)
-        for p in self.input_paths:
-            self.file_listbox.insert(tk.END, os.path.basename(p))
-        if self.input_paths and not self.output_dir.get():
-            self.output_dir.set(os.path.join(os.path.dirname(self.input_paths[0]), "split_output"))
-
-    def select_output(self):
-        path = filedialog.askdirectory()
-        if path: self.output_dir.set(os.path.normpath(path))
-
-    def on_file_select(self, event):
+    def _on_file_selected(self, event=None):
         selection = self.file_listbox.curselection()
-        if selection:
-            path = self.input_paths[selection[0]]
-            self.load_preview_resource(path)
-
-    def load_preview_resource(self, path: str):
-        """仅在切换文件时加载原始资源并生成缩略图"""
+        if not selection: return
+        
+        image_path = self.current_files[selection[0]]
         try:
-            with Image.open(path) as img:
+            with Image.open(image_path) as img:
                 self.current_orig_size = img.size
-                # 预提取缩略图，避免后续频繁操作原图内存
-                thumb = img.copy()
-                thumb.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                img.verify() # 验证
+                
+            # 重新打开以便缩放
+            with Image.open(image_path) as img:
+                # 预生成一个略大于预览区的原比例缩略图，避免后续重复 IO
+                # 同时处理包含透明通道的预览背景
+                thumb = img.convert("RGBA")
+                thumb.thumbnail((1200, 1200))
                 self.thumb_img = thumb
-            self.load_preview_ui()
-        except Exception as e:
-            print(f"Failed to load image: {e}")
+            self._render_canvas()
+        except:
             self.thumb_img = None
             self.canvas.delete("all")
 
-    def load_preview_ui(self):
-        """同步画布尺寸并渲染缩略图"""
+    def _on_canvas_configure(self, event):
+        self.root.after(50, self._render_canvas)
+
+    def _render_canvas(self):
         if not self.thumb_img: return
-        
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         if cw < 20 or ch < 20: return
-        
-        # 实际原图到当前画布的缩放比例
+
         self.preview_ratio = min(cw / self.current_orig_size[0], ch / self.current_orig_size[1])
         nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
-        
-        # 将缩略图再次 resize 到匹配画布的物理像素
+
         display_img = self.thumb_img.resize((nw, nh), Image.Resampling.BILINEAR)
         self.tk_thumb = ImageTk.PhotoImage(display_img)
-        
+
         self.canvas.delete("all")
         self.canvas.create_image(cw//2, ch//2, image=self.tk_thumb, tags="bg")
         self.fast_update_preview()
 
-    def fast_update_preview(self):
-        """极速重绘：只涉及 Canvas 线条坐标更新"""
-        if not self.thumb_img: return
-        self.canvas.delete("overlay")
-        
-        try:
-            def get_val(v, default=0):
-                try: 
-                    val = v.get().strip()
-                    return int(val) if val else default
-                except (ValueError, TypeError): 
-                    return default
-
-            rows, cols = max(1, get_val(self.rows_var, 3)), max(1, get_val(self.cols_var, 3))
-            ol, ot, oright, ob = get_val(self.off_l), get_val(self.off_t), get_val(self.off_r), get_val(self.off_b)
-            
-            cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
-            nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
-            x0, y0 = (cw - nw) // 2, (ch - nh) // 2
-            
-            # 画布缩放后坐标
-            cx1, cy1 = x0 + int(ol * self.preview_ratio), y0 + int(ot * self.preview_ratio)
-            cx2, cy2 = x0 + nw - int(oright * self.preview_ratio), y0 + nh - int(ob * self.preview_ratio)
-            
-            if cx2 > cx1 and cy2 > cy1:
-                # 计算切片预估尺寸
-                target_w = (self.current_orig_size[0] - ol - oright) // cols
-                target_h = (self.current_orig_size[1] - ot - ob) // rows
-                self.info_label.config(text=f"预期切片尺寸: {target_w} x {target_h} px", foreground=self.theme.PRIMARY)
-
-                # 绘制红虚线裁剪框
-                self.canvas.create_rectangle(cx1, cy1, cx2, cy2, outline=self.theme.ACCENT, width=2, dash=(4,4), tags="overlay")
-                # 绘制青色切割网格
-                for i in range(1, rows):
-                    y = cy1 + (cy2 - cy1) * i / rows
-                    self.canvas.create_line(cx1, y, cx2, y, fill=self.theme.INFO, tags="overlay")
-                for j in range(1, cols):
-                    x = cx1 + (cx2 - cx1) * j / cols
-                    self.canvas.create_line(x, cy1, x, cy2, fill=self.theme.INFO, tags="overlay")
-            else:
-                self.info_label.config(text="⚠️ 偏移超出图片范围", foreground=self.theme.ACCENT)
-                self.canvas.create_text(cw//2, ch//2, text="⚠️ 偏移范围无效", fill=self.theme.ACCENT, font=("微软雅黑", 14, "bold"), tags="overlay")
-        except Exception as e:
-            self.info_label.config(text=f"参数错误: {e}", foreground=self.theme.ACCENT)
-
-    def run_batch(self):
-        if not self.input_paths:
-            messagebox.showwarning("提示", "请先添加待处理的图片流")
-            return
-            
-        try:
-            config = SplitConfig(
-                rows=int(self.rows_var.get()),
-                cols=int(self.cols_var.get()),
-                output_dir=self.output_dir.get(),
-                template=self.template_var.get(),
-                offsets=(
-                    int(self.off_l.get() or 0), 
-                    int(self.off_t.get() or 0), 
-                    int(self.off_r.get() or 0), 
-                    int(self.off_b.get() or 0)
-                )
-            )
-        except ValueError as e:
-            messagebox.showerror("参数错误", str(e))
-            return
-        except Exception as e:
-            messagebox.showerror("运行错误", f"初始化配置失败: {e}")
-            return
-
-        self.btn_run.config(state=tk.DISABLED)
-        self.btn_stop.config(state=tk.NORMAL)
-        self.progress['value'] = 0
-        self.progress['maximum'] = len(self.input_paths)
-        
-        self.stop_event.clear()
-        args = {
-            "paths": list(self.input_paths),
-            "config": config
-        }
-        
-        threading.Thread(target=self.work_thread, kwargs=args, daemon=True).start()
-
-    def stop_task(self):
-        if messagebox.askyesno("确认", "确定要中断当前处理任务吗？"):
-            self.stop_event.set()
-            self.status_label.config(text="正在停止...")
-
-    def work_thread(self, paths, config: SplitConfig):
-        success_count = 0
-        is_aborted = False
-        
-        for i, path in enumerate(paths):
-            if self.stop_event.is_set():
-                is_aborted = True
-                break
-            
-            # 安全更新 UI
-            if self.root.winfo_exists():
-                self.root.after(0, lambda p=path, idx=i, total=len(paths): 
-                    self.status_label.config(text=f"正在切割: {os.path.basename(p)} ({idx+1}/{total})") if self.root.winfo_exists() else None)
-            
-            success, _ = split_image_core(path, config)
-            if success: success_count += 1
-            
-            if self.root.winfo_exists():
-                self.root.after(0, lambda: self.progress.step(1) if self.root.winfo_exists() else None)
-            
-        if self.root.winfo_exists():
-            self.root.after(0, lambda: self.finish_report(success_count, len(paths), is_aborted) if self.root.winfo_exists() else None)
-
     def finish_report(self, s, total, aborted=False):
-        if not self.root.winfo_exists(): return
-        
         self.btn_run.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
-        
+
         if aborted:
-            msg = f"任务已中途中断！\n成功: {s} / {total}\n请检查输出目录。"
+            msg = f"任务已中断！\n成功: {s} / {total}"
             self.status_label.config(text="任务已取消", foreground=self.theme.ACCENT)
         else:
-            msg = f"处理完成！\n成功: {s} / {total}\n结果已保存至输出目录。"
+            msg = f"任务完成！\n成功: {s} / {total}"
             self.status_label.config(text="任务已结束", foreground=self.theme.SUCCESS)
-            
         messagebox.showinfo("任务报告", msg)
-        
-        out_path = self.output_dir.get()
-        if os.path.exists(out_path):
-            self.open_folder(out_path)
 
     def on_close(self):
-        """处理窗口关闭事件"""
         if self.btn_run['state'] == tk.DISABLED:
-            if not messagebox.askyesno("确认退出", "任务正在运行，确定退出？"):
+            if not messagebox.askyesno("退出", "任务正在运行，确定要强制退出吗？"):
                 return
             self.stop_event.set()
         self.root.destroy()
 
-    def open_folder(self, path):
-        """跨平台打开目录"""
-        try:
-            curr_os = platform.system()
-            if curr_os == "Windows":
-                os.startfile(path)
-            elif curr_os == "Darwin": # macOS
-                subprocess.run(["open", path])
-            else: # Linux
-                subprocess.run(["xdg-open", path])
-        except Exception:
-            pass
-
 if __name__ == "__main__":
     root = tk.Tk()
     app = ImageSplitterApp(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()

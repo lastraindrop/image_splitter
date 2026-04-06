@@ -45,42 +45,41 @@ image_splitter/
    - 模型层 (`models.py`) 负责统一的参数结构化，核心层 (`core.py`) 负责业务逻辑校验。
 
 ## 扩展一个新功能
-
 1. 在 `processors/` 目录下新建 Python 脚本，继承 `BaseProcessor`。
 2. 实现 `process()` 核心逻辑和 `get_ui_metadata()` 参数定义。
-3. 在 `core.py` 中调用 `ProcessorRegistry.register()` 进行注册。
-4. 运行 `python gui.py`，新功能将自动出现在下拉列表中，且参数面板自动生成。
+3. **重要 (参数对齐协议)**: 在 `process()` 返回的 `context` 字典中，需包含该处理器的核心元数据（如 `anchor`, `text` 等），以支持用户在命名模板中动态引用（见下文）。
+4. 系统核心 `register_all_processors()` 会自动扫描并完成加载。无需手动在 `core.py` 中注册。
+5. 运行 `python gui.py` 或 `cli.py` 即刻生效。
+
+## Context 注入协议 (Parameter Consistency)
+为了通过“动态对齐”解决外部变量命名冲突，规定：处理器必须将能唯一描述该次操作的参数注入到返回的 `context` 中。
+- **目的**: 允许命名模板 `{filename}_{anchor}_{index}` 在任何处理器下都能正确工作。
+- **示例**: 若提供了 `anchor` 参数，必须在 `return [(img, {"anchor": anchor, ...})]` 中同步导出。
 
 ## 测试与质量 (Testing Standards)
 
-- **执行指令**：`$env:PYTHONPATH='.'; python -m unittest discover tests` (Windows)
-- **覆盖范围**：
-  - `test_core.py`: 基础网格逻辑。
-  - `test_custom_splitter.py`: 不规则线条切割。
-  - `test_adjuster.py`: 画布增添与裁剪。
-  - `test_dispatcher.py`: 命令解析与分发。
-  - `test_new_fixes.py`: 参数校验与格式安全性。
+- **执行指令**：`$env:PYTHONPATH='.'; pytest tests` 
+- **核心全量测试集 (V5.0)**：
+  - `test_engine_v4.py`: 插件自动发现与协议一致性。
+  - `test_processors_expanded.py`: 深度参数组合适配。
+  - `test_cli.py`: 高并发与递归扫描。
+  - `test_dispatcher.py`: 指令链式分发分流稳定性。
 
 ---
 
 ## 路线图 (Roadmap)
 
 ### 📈 已完成 (Done)
-- [x] **高性能并发重构**：多进程并行加速。
-- [x] **安全性加固**：路径穿越拦截与格式安全性修复。
-- [x] **通用框架迁移**：引入 `BaseProcessor` 与 `Registry` 体系。
-- [x] **Blender 式操作符设计**：实现 `CommandDispatcher` 指令分发系统。
-- [x] **动态 UI 革命**：基于元数据自动生成参数面板，消除硬编码。
-- [x] **自定义线切割**：支持任意坐标的横纵切割。
-- [x] **画布调整功能**：支持增添、裁剪与自定义颜色填充。
+- [x] **V4.0 架构升级**：完全解耦的插件自动发现机制。
+- [x] **功能库大扩容**：集成色彩、水印、格式转换三大新核心模块。
+- [x] **V5.0 压力测试集**：实现 100% 通过率的大规模并发集成测试。
+- [x] **动态参数协议**：通过 Context 注入解决动态对齐与模板一致性问题。
 
 ### 🗓 短期计划 (Short-Term Goals)
-- [ ] **参数联动预设系统**：支持用户保存/加载常用的操作序列 (Presets) 为本地脚本。
-- [ ] **多帧/动图支持**：支持 GIF 和 WebP 动图的帧提取与分层切割。
-- [ ] **冲突策略配置**：在批量重名时支持覆盖/跳过/自动重命名等策略。
-- [ ] **增强预览图层**：为缩放和画布调整提供实时 Canvas 图形反馈。
+- [ ] **可视化 Pipeline 编辑器**：允许用户在 GUI 中拖拽处理器卡片，构建复杂的处理链。
+- [ ] **智能边缘裁剪集成**：基于物体识别或显著性检测的自动居中切割。
+- [ ] **增强预览绘制协议**：为 `ColorAdjuster` 提供直方图等实时数据反馈。
 
 ### 🚀 长期计划 (Long-Term Goals)
-- [ ] **AI 内容感知切割**：集成 AI 模型自动识别主体并进行聚焦分割。
-- [ ] **处理管线扩展 (Pipeline)**：支持复杂的多步处理链（如：缩放 -> 旋转 -> 切割 -> 水印）。
-- [ ] **云端同步预留**：架构层预留 Restful API 钩子，支持跨设备同步处理脚本。
+- [ ] **跨平台 WASM 发行版**：支持浏览器端直接进行高性能纯离线处理。
+- [ ] **分布式处理中台**：通过 RPC 协议将巨型渲染任务分发至多个节点。

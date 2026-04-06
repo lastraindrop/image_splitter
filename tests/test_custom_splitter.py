@@ -4,8 +4,8 @@ import os
 import tempfile
 from PIL import Image
 from pathlib import Path
-from models import CustomSplitConfig
-from core import process_image
+from image_splitter.models import CustomSplitConfig
+from image_splitter.core import process_image
 
 class TestCustomSplitter(unittest.TestCase):
     def setUp(self):
@@ -63,15 +63,26 @@ class TestCustomSplitter(unittest.TestCase):
         """测试超出范围的线应被忽略"""
         config = CustomSplitConfig(
             h_lines=[150], # 超出 100
-            v_lines=[-10], # 负数由 validate 拦截或 processor 过滤
+            v_lines=[50],
             output_dir=str(self.output_dir)
         )
         
         success, _ = process_image(str(self.img_path), "custom_splitter", config)
         self.assertTrue(success)
-        # 只有一张图 (1x1)
+        # 生成 1x2 = 2 块
         files = list(self.output_dir.glob("*.png"))
-        self.assertEqual(len(files), 1)
+        self.assertEqual(len(files), 2)
+
+    def test_custom_split_negative_forbidden(self):
+        """测试负数线已被模型拦截"""
+        with self.assertRaises(ValueError) as ctx:
+            config = CustomSplitConfig(
+                h_lines=[-10],
+                v_lines=[50],
+                output_dir=str(self.output_dir)
+            )
+            config.validate()
+        self.assertIn("非负整数", str(ctx.exception))
 
 if __name__ == '__main__':
     unittest.main()

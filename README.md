@@ -33,13 +33,18 @@
 - `custom_splitter`: 自定义坐标分割。
 - `resizer`: 通用图像缩放。
 - `canvas_adjuster`: 画布边界调整与填充。
+- `color_adjuster`: **(New)** 亮度、对比度、饱和度、锐度调节。
+- `text_watermark`: **(New)** 全象限文字水印叠加。
+- `format_converter`: **(New)** WebP/JPEG/PNG 格式转换与质量控制。
 
 ## 📝 命名模板占位符
 - `{filename}`: 原始文件名（不含扩展名）
 - `{row}` / `{col}`: 当前行号/列号 (1开始)
 - `{index}`: 全局序号 (01开始)
 - `{ext}`: 文件后缀
-- `{x_start}` / `{y_start}`: 起始像素坐标 (仅部分插件支持)
+- `{anchor}`: 对齐位置（如 TL, BR, center）
+- `{text}`: 水印文字内容
+- `{quality}`: 导出质量参数
 
 ## 🛠 开发扩展
 本项目支持极简的插件开发。只需继承 `BaseProcessor` 并实现逻辑，即可自动获得 CLI 支持与 GUI 自动渲染面板。详情请参阅 [DEVELOPER.md](./DEVELOPER.md)。

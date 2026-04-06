@@ -6,7 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from cli import main
+from image_splitter.cli import main
 
 class TestImageSplitterCLI(unittest.TestCase):
     def setUp(self):
