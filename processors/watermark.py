@@ -17,7 +17,7 @@ class TextWatermark(BaseProcessor):
 
     @property
     def category(self) -> str:
-        return "Security"
+        return "Edit"
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [

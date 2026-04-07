@@ -87,7 +87,9 @@ def process_image(
                 base_ctx = {
                     "filename": base_name, 
                     "ext": ext.lstrip('.'),
-                    "index": str(count + 1).zfill(2)
+                    "index": str(count + 1).zfill(2),
+                    "w": cell.width,
+                    "h": cell.height
                 }
                 base_ctx.update(context)
                 

@@ -33,14 +33,17 @@
 - `custom_splitter`: 自定义坐标分割。
 - `resizer`: 通用图像缩放。
 - `canvas_adjuster`: 画布边界调整与填充。
-- `color_adjuster`: **(New)** 亮度、对比度、饱和度、锐度调节。
-- `text_watermark`: **(New)** 全象限文字水印叠加。
-- `format_converter`: **(New)** WebP/JPEG/PNG 格式转换与质量控制。
+- `format_converter`: WebP/JPEG/PNG 格式转换与质量控制。
+- `geometry`: **(New)** 图像旋转 (Rotate) 与轴向翻转 (Flip)。
+- `filters`: **(New)** 极速灰度化与底片/反色滤镜。
+- `metadata_cleaner`: **(New)** 剥离 EXIF 隐私信息，减小文件体积。
 
 ## 📝 命名模板占位符
 - `{filename}`: 原始文件名（不含扩展名）
 - `{row}` / `{col}`: 当前行号/列号 (1开始)
 - `{index}`: 全局序号 (01开始)
+- `{w}`: 处理后图片的宽度(px)
+- `{h}`: 处理后图片的高度(px)
 - `{ext}`: 文件后缀
 - `{anchor}`: 对齐位置（如 TL, BR, center）
 - `{text}`: 水印文字内容

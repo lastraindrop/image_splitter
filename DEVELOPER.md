@@ -20,9 +20,10 @@ image_splitter/
 │   └── adjuster.py   # 画布调整与填充插件
 ├── core.py           # 任务流水线引擎 (与 Registry 深度绑定)
 ├── models.py         # 参数校验模型 (Fail-Fast 准则)
-├── gui.py            # 动态 UI 平台 (基于 Metadata 自动渲染)
-├── cli.py            # 高性能 CLI (多进程并发)
+├── gui.py            # 动态 UI 平台 (基于强类型 Metadata 自动渲染)
+├── cli.py            # 高性能 CLI (支持路径自修复与并发)
 └── tests/            # 自动化测试套件
+    └── test_operator_compliance.py # 架构合规性审计脚本
 ```
 
 ## 核心设计准则
@@ -51,10 +52,13 @@ image_splitter/
 4. 系统核心 `register_all_processors()` 会自动扫描并完成加载。无需手动在 `core.py` 中注册。
 5. 运行 `python gui.py` 或 `cli.py` 即刻生效。
 
-## Context 注入协议 (Parameter Consistency)
-为了通过“动态对齐”解决外部变量命名冲突，规定：处理器必须将能唯一描述该次操作的参数注入到返回的 `context` 中。
-- **目的**: 允许命名模板 `{filename}_{anchor}_{index}` 在任何处理器下都能正确工作。
-- **示例**: 若提供了 `anchor` 参数，必须在 `return [(img, {"anchor": anchor, ...})]` 中同步导出。
+## Context 注入协议与强类型校验 (Parameter Consistency)
+为了通过“动态对齐”解决外部变量命名冲突并确保 UI 交互的稳定性，规定：
+- **Context 注入**: 处理器必须将核心参数（如 `rotate`, `text`）注入返回的 `context` 中，以支持命名模板的动态变量。
+- **强类型约定**: `get_ui_metadata` 必须包含 `type` 字段 (`int`, `float`, `bool`, `str`)。
+  - `gui.py` 会根据 `type` 自动选择控件（如 `bool` 对应勾选框）。
+  - `gui.py` 在执行前会进行强制转换与校验，确保输入数据不破坏后端 Operator 的运行。
+- **系统级变量**: `core.py` 默认提供 `{w}`, `{h}`, `{index}`, `{filename}` 变量。
 
 ## 测试与质量 (Testing Standards)
 
@@ -64,6 +68,7 @@ image_splitter/
   - `test_processors_expanded.py`: 深度参数组合适配。
   - `test_cli.py`: 高并发与递归扫描。
   - `test_dispatcher.py`: 指令链式分发分流稳定性。
+  - `test_operator_compliance.py`: **架构审计** - 验证所有插件的协议合规性。
 
 ---
 
@@ -71,14 +76,15 @@ image_splitter/
 
 ### 📈 已完成 (Done)
 - [x] **V4.0 架构升级**：完全解耦的插件自动发现机制。
-- [x] **功能库大扩容**：集成色彩、水印、格式转换三大新核心模块。
-- [x] **V5.0 压力测试集**：实现 100% 通过率的大规模并发集成测试。
-- [x] **动态参数协议**：通过 Context 注入解决动态对齐与模板一致性问题。
+- [x] **功能库大扩容**：集成几何变换、滤镜、元数据清理、水印等 10+ 核心模块。
+- [x] **架构合规审计**：实现自动化插件协议检测（Compliance Testing）。
+- [x] **UI 交互增强**：自适应控件（勾选框/文本框）与强类型参数校验。
+- [x] **路径自修复**：解决跨目录启动时的 ModuleNotFoundError 导入问题。
 
 ### 🗓 短期计划 (Short-Term Goals)
-- [ ] **可视化 Pipeline 编辑器**：允许用户在 GUI 中拖拽处理器卡片，构建复杂的处理链。
-- [ ] **智能边缘裁剪集成**：基于物体识别或显著性检测的自动居中切割。
-- [ ] **增强预览绘制协议**：为 `ColorAdjuster` 提供直方图等实时数据反馈。
+- [ ] **可视化 Pipeline 编辑器**：允许用户在 GUI 中拖拽处理器卡片。
+- [ ] **宏录制与控制台 (Macro Console)**：实时显示操作指令并支持保存为脚本。
+- [ ] **Keymap 绑定系统**：支持用户自定义快捷键触发操作符。
 
 ### 🚀 长期计划 (Long-Term Goals)
 - [ ] **跨平台 WASM 发行版**：支持浏览器端直接进行高性能纯离线处理。

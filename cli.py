@@ -1,10 +1,18 @@
 # image_splitter/cli.py
-import argparse
-import os
 import sys
+import os
+from pathlib import Path
+
+# ---------------------------------------------------------
+# 路径自修复：支持绝对导入 image_splitter
+# ---------------------------------------------------------
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+import argparse
 import multiprocessing
 import glob
-from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 from image_splitter.core import split_image_core
 from image_splitter.models import SplitConfig

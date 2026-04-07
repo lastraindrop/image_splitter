@@ -1,8 +1,18 @@
 # image_splitter/gui.py
+import sys
+import os
+from pathlib import Path
+
+# ---------------------------------------------------------
+# 路径自修复：确保父目录在 sys.path 中，以支持绝对导入 image_splitter
+# ---------------------------------------------------------
+project_root = str(Path(__file__).resolve().parent.parent)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
-import os
 import ast
 import platform
 import subprocess
@@ -11,14 +21,17 @@ from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
 
 class UITheme:
-    """主题配置"""
-    DARK_BG = "#1e1e1e"
-    DARK_FG = "#d4d4d4"
-    ACCENT = "#007acc"
-    PRIMARY = "#3b82f6"
-    SUCCESS = "#10b981"
-    INFO = "#3b82f6"
-    PANEL_BG = "#252526"
+    """现代工业风主题配置"""
+    DARK_BG = "#121212"      # 深黑背景
+    PANEL_BG = "#1e1e1e"     # 面板背景
+    ITEM_BG = "#2d2d2d"      # 输入框背景
+    DARK_FG = "#e0e0e0"      # 主文字色
+    DIM_FG = "#888888"       # 次要文字色
+    ACCENT = "#3b82f6"       # 品牌蓝
+    SUCCESS = "#10b981"      # 成功绿
+    DANGER = "#ef4444"       # 错误红
+    BORDER = "#333333"       # 边框色
+    SELECT = "#264f78"       # 选中蓝
 
 class ImageSplitterApp:
     def __init__(self, root):
@@ -47,88 +60,150 @@ class ImageSplitterApp:
         self.root.configure(bg=self.theme.DARK_BG)
         style = ttk.Style()
         style.theme_use('clam')
+        
+        # 通用框架样式
         style.configure("TFrame", background=self.theme.DARK_BG)
-        style.configure("TLabel", background=self.theme.DARK_BG, foreground=self.theme.DARK_FG, font=("Microsoft YaHei UI", 10))
-        style.configure("Primary.TButton", background=self.theme.PRIMARY, foreground="white", font=("Microsoft YaHei UI", 10, "bold"))
-        style.map("Primary.TButton", background=[('active', '#2563eb')])
+        style.configure("Panel.TFrame", background=self.theme.PANEL_BG)
+        
+        # 现代标签样式
+        style.configure("TLabel", background=self.theme.PANEL_BG, foreground=self.theme.DARK_FG, font=("Microsoft YaHei UI", 10))
+        style.configure("Caption.TLabel", background=self.theme.PANEL_BG, foreground=self.theme.ACCENT, font=("Microsoft YaHei UI", 11, "bold"))
+        style.configure("Dim.TLabel", background=self.theme.PANEL_BG, foreground=self.theme.DIM_FG, font=("Microsoft YaHei UI", 9))
+
+        # 按钮样式重构 (更扁平、更现代)
+        style.configure("Primary.TButton", padding=8, background=self.theme.ACCENT, foreground="white", font=("Microsoft YaHei UI", 10, "bold"))
+        style.map("Primary.TButton", 
+                  background=[('active', '#2563eb'), ('disabled', '#404040')],
+                  relief=[('pressed', 'flat'), ('!pressed', 'flat')])
+        
+        style.configure("Secondary.TButton", padding=6, background=self.theme.ITEM_BG, foreground=self.theme.DARK_FG, font=("Microsoft YaHei UI", 10))
+        style.map("Secondary.TButton", background=[('active', '#3d3d3d')])
+
+        # 进度条样式
+        style.configure("Modern.Horizontal.TProgressbar", thickness=6, background=self.theme.ACCENT, troughcolor=self.theme.BORDER, borderwidth=0)
 
     def _create_widgets(self):
-        # 左右分栏
-        self.paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
-        self.paned.pack(fill=tk.BOTH, expand=True)
+        # 建立主容器，增加边隙
+        self.main_container = tk.Frame(self.root, bg=self.theme.DARK_BG)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
+
+        self.paned = ttk.PanedWindow(self.main_container, orient=tk.HORIZONTAL)
+        self.paned.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # --- 左侧控制面板 ---
-        self.left_panel = tk.Frame(self.paned, bg=self.theme.PANEL_BG, width=320)
+        self.left_panel = tk.Frame(self.paned, bg=self.theme.PANEL_BG, width=350)
         self.paned.add(self.left_panel, weight=0)
 
-        # 标题
-        tk.Label(self.left_panel, text="操作配置", font=("Microsoft YaHei UI", 12, "bold"), 
-                 bg=self.theme.PANEL_BG, fg=self.theme.PRIMARY).pack(pady=15, padx=20, anchor=tk.W)
+        # 侧边栏内边距容器
+        self.p_inner = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG, padx=20, pady=10)
+        self.p_inner.pack(fill=tk.BOTH, expand=True)
 
-        # 处理器选择
-        tk.Label(self.left_panel, text="选择功能:", bg=self.theme.PANEL_BG).pack(padx=20, anchor=tk.W)
+        # 分组：功能集成
+        ttk.Label(self.p_inner, text="✨ 功能算子 (Operators)", style="Caption.TLabel").pack(pady=(10, 5), anchor=tk.W)
+        ttk.Label(self.p_inner, text="选择核心处理逻辑", style="Dim.TLabel").pack(anchor=tk.W, pady=(0, 10))
+
         self.active_processor_name = tk.StringVar()
         processors = [p.display_name for p in ProcessorRegistry.list_all()]
-        self.processor_combo = ttk.Combobox(self.left_panel, textvariable=self.active_processor_name, values=processors, state="readonly")
-        self.processor_combo.pack(fill=tk.X, padx=20, pady=5)
+        self.processor_combo = ttk.Combobox(self.p_inner, textvariable=self.active_processor_name, 
+                                            values=processors, state="readonly", font=("Microsoft YaHei UI", 10))
+        self.processor_combo.pack(fill=tk.X, pady=(0, 15))
         self.processor_combo.bind("<<ComboboxSelected>>", self._on_processor_changed)
         if processors: self.processor_combo.current(0)
 
-        # 动态参数容器
-        self.props_frame = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG)
-        self.props_frame.pack(fill=tk.BOTH, expand=False, padx=20, pady=10)
-
-        # 默认保存选项
-        tk.Label(self.left_panel, text="输出配置:", bg=self.theme.PANEL_BG, fg=self.theme.PRIMARY).pack(padx=20, pady=(15, 5), anchor=tk.W)
+        # 分组：参数配置
+        self.param_sep = tk.Frame(self.p_inner, bg=self.theme.BORDER, height=1)
+        self.param_sep.pack(fill=tk.X, pady=10)
+        ttk.Label(self.p_inner, text="🛠 参数调整 (Parameters)", style="Caption.TLabel").pack(pady=(10, 5), anchor=tk.W)
         
-        tk.Label(self.left_panel, text="命名模板:", bg=self.theme.PANEL_BG).pack(padx=20, anchor=tk.W)
+        self.props_frame = tk.Frame(self.p_inner, bg=self.theme.PANEL_BG)
+        self.props_frame.pack(fill=tk.BOTH, expand=False, pady=5)
+
+        # 分组：输出设置
+        self.out_sep = tk.Frame(self.p_inner, bg=self.theme.BORDER, height=1)
+        self.out_sep.pack(fill=tk.X, pady=10)
+        ttk.Label(self.p_inner, text="💾 输出预设 (Presets)", style="Caption.TLabel").pack(pady=(10, 5), anchor=tk.W)
+        
+        ttk.Label(self.p_inner, text="命名模板 (Template):", style="Dim.TLabel").pack(anchor=tk.W)
         self.template_var = tk.StringVar(value="{filename}_{index}")
-        tk.Entry(self.left_panel, textvariable=self.template_var, bg=self.theme.DARK_BG, fg="white", insertbackground="white").pack(fill=tk.X, padx=20, pady=5)
+        self.template_entry = tk.Entry(self.p_inner, textvariable=self.template_var, 
+                                       bg=self.theme.ITEM_BG, fg="white", insertbackground="white", 
+                                       relief="flat", font=("Consolas", 10))
+        self.template_entry.pack(fill=tk.X, pady=(5, 2), ipady=3)
+        ttk.Label(self.p_inner, text="可用: {filename}, {index}, {w}, {h}", style="Dim.TLabel").pack(anchor=tk.W, pady=(0, 10))
 
-        # 底部按钮区
-        self.bottom_btn_frame = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG)
-        self.bottom_btn_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=20, padx=20)
+        # 底部操作区 (悬浮感)
+        self.bottom_btn_frame = tk.Frame(self.left_panel, bg=self.theme.PANEL_BG, pady=20, padx=20)
+        self.bottom_btn_frame.pack(side=tk.BOTTOM, fill=tk.X)
         
-        self.btn_run = ttk.Button(self.bottom_btn_frame, text="🚀 运行任务", style="Primary.TButton", command=self.run_batch)
+        self.btn_run = ttk.Button(self.bottom_btn_frame, text="🚀 启动流水线", style="Primary.TButton", command=self.run_batch)
         self.btn_run.pack(fill=tk.X, pady=5)
         
-        self.btn_stop = ttk.Button(self.bottom_btn_frame, text="⏹ 停止运行", state=tk.DISABLED, command=self.stop_tasks)
+        self.btn_stop = ttk.Button(self.bottom_btn_frame, text="⏹ 中断执行", state=tk.DISABLED, command=self.stop_tasks)
         self.btn_stop.pack(fill=tk.X, pady=5)
 
-        # --- 右侧预览与列表 ---
+        # --- 右侧主工作区 ---
         self.right_container = tk.Frame(self.paned, bg=self.theme.DARK_BG)
         self.paned.add(self.right_container, weight=1)
 
-        # 画布与图片信息
-        self.preview_frame = tk.Frame(self.right_container, bg=self.theme.DARK_BG, bd=1, relief=tk.SOLID)
-        self.preview_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        # 顶部视图区
+        self.preview_frame = tk.Frame(self.right_container, bg=self.theme.PANEL_BG, bd=1, highlightbackground=self.theme.BORDER, highlightthickness=1)
+        self.preview_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
-        self.info_label = tk.Label(self.preview_frame, text="请先选择图片文件", fg=self.theme.DARK_FG)
-        self.info_label.pack(pady=5)
+        self.info_label = tk.Label(self.preview_frame, text="待命：请载入素材以生成实时预览", bg=self.theme.PANEL_BG, fg=self.theme.DIM_FG, font=("Microsoft YaHei UI", 9))
+        self.info_label.pack(pady=10)
 
-        self.canvas = tk.Canvas(self.preview_frame, bg="#101010", highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(self.preview_frame, bg="#0a0a0a", highlightthickness=0, borderwidth=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-        # 文件列表区
-        self.list_frame = tk.Frame(self.right_container, bg=self.theme.DARK_BG, height=150)
-        self.list_frame.pack(fill=tk.X, padx=20, pady=10)
+        # 底部资产列表区
+        self.asset_frame = tk.Frame(self.right_container, bg=self.theme.DARK_BG)
+        self.asset_frame.pack(fill=tk.X, padx=15, pady=10)
         
-        self.btn_select = ttk.Button(self.list_frame, text="📂 选择图片 (支持多选/拖入)", command=self.select_files)
-        self.btn_select.pack(side=tk.TOP, fill=tk.X)
+        self.asset_btn_frame = tk.Frame(self.asset_frame, bg=self.theme.DARK_BG)
+        self.asset_btn_frame.pack(fill=tk.X)
         
-        self.file_listbox = tk.Listbox(self.list_frame, bg=self.theme.PANEL_BG, fg=self.theme.DARK_FG, 
-                                       borderwidth=0, height=5, selectbackground=self.theme.ACCENT)
-        self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=5)
+        ttk.Button(self.asset_btn_frame, text="✚ 载入素材", style="Secondary.TButton", command=self.select_files).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,2))
+        ttk.Button(self.asset_btn_frame, text="✖ 移除选中", style="Secondary.TButton", command=self.remove_selected).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=2)
+        ttk.Button(self.asset_btn_frame, text="🗑 清空列表", style="Secondary.TButton", command=self.clear_list).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2,0))
+        
+        self.file_listbox = tk.Listbox(self.asset_frame, bg=self.theme.PANEL_BG, fg=self.theme.DARK_FG, 
+                                       borderwidth=0, height=6, selectbackground=self.theme.SELECT, 
+                                       font=("Consolas", 9), highlightthickness=1, highlightcolor=self.theme.ACCENT,
+                                       selectmode=tk.EXTENDED)
+        self.file_listbox.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=5)
         self.file_listbox.bind("<<ListboxSelect>>", self._on_file_selected)
 
-        # 进度条
+    def remove_selected(self):
+        indices = sorted(self.file_listbox.curselection(), reverse=True)
+        for i in indices:
+            self.file_listbox.delete(i)
+            self.current_files.pop(i)
+        if not self.current_files:
+            self.thumb_img = None
+            self.canvas.delete("all")
+
+    def clear_list(self):
+        if messagebox.askyesno("清空", "确定要清空文件列表吗？"):
+            self.file_listbox.delete(0, tk.END)
+            self.current_files = []
+            self.thumb_img = None
+            self.canvas.delete("all")
+
+        # 底部状态栏
+        self.status_container = tk.Frame(self.right_container, bg=self.theme.DARK_BG)
+        self.status_container.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(0, 10))
+
         self.progress_var = tk.DoubleVar()
-        self.progress = ttk.Progressbar(self.right_container, length=100, mode='determinate', variable=self.progress_var)
-        self.progress.pack(fill=tk.X, padx=20, pady=10)
+        self.progress = ttk.Progressbar(self.status_container, length=100, mode='determinate', 
+                                        variable=self.progress_var, style="Modern.Horizontal.TProgressbar")
+        self.progress.pack(fill=tk.X, pady=(5, 5))
         
-        self.status_label = tk.Label(self.right_container, text="就绪", font=("Consolas", 9))
-        self.status_label.pack(side=tk.BOTTOM, fill=tk.X, padx=20)
+        self.status_label = tk.Label(self.status_container, text="READY", font=("Consolas", 8), bg=self.theme.DARK_BG, fg=self.theme.DIM_FG)
+        self.status_label.pack(side=tk.LEFT)
+
+        # 初始化参数列表
+        self._on_processor_changed()
 
         # 初始化参数列表
         self._on_processor_changed()
@@ -145,15 +220,24 @@ class ImageSplitterApp:
 
         for meta in processor.get_ui_metadata():
             frame = tk.Frame(self.props_frame, bg=self.theme.PANEL_BG)
-            frame.pack(fill=tk.X, pady=2)
+            frame.pack(fill=tk.X, pady=4)
             tk.Label(frame, text=meta["label"], bg=self.theme.PANEL_BG, font=("Microsoft YaHei UI", 9)).pack(side=tk.LEFT)
             
-            var = tk.StringVar(value=str(meta["default"]))
-            self.dynamic_vars[meta["name"]] = var
-            # 实时更新预览
-            entry = tk.Entry(frame, textvariable=var, bg=self.theme.DARK_BG, fg="white", width=12, insertbackground="white")
-            entry.pack(side=tk.RIGHT)
-            entry.bind("<KeyRelease>", lambda e: self.fast_update_preview())
+            p_type = meta.get("type", "str")
+            if p_type == "bool":
+                # 对于布尔值，使用勾选框
+                var = tk.BooleanVar(value=bool(meta["default"]))
+                self.dynamic_vars[meta["name"]] = var
+                cb = tk.Checkbutton(frame, variable=var, bg=self.theme.PANEL_BG, activebackground=self.theme.PANEL_BG,
+                                    command=self.fast_update_preview, selectcolor=self.theme.DARK_BG)
+                cb.pack(side=tk.RIGHT)
+            else:
+                var = tk.StringVar(value=str(meta["default"]))
+                self.dynamic_vars[meta["name"]] = var
+                entry = tk.Entry(frame, textvariable=var, bg=self.theme.ITEM_BG, fg="white", 
+                                 width=12, insertbackground="white", relief="flat")
+                entry.pack(side=tk.RIGHT, ipady=2)
+                entry.bind("<KeyRelease>", lambda e: self.fast_update_preview())
 
         self.fast_update_preview()
 
@@ -170,15 +254,28 @@ class ImageSplitterApp:
         processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
         if not processor: return
 
-        config = {k: v.get() for k, v in self.dynamic_vars.items()}
-        config["output_dir"] = output_dir
-        config["template"] = self.template_var.get()
+        # 参数清洗与类型转换 (防止 Entry 传出纯字符串导致 backend 崩溃)
+        processed_config = {}
+        for meta in processor.get_ui_metadata():
+            raw_val = self.dynamic_vars[meta["name"]].get()
+            t = meta.get("type", "str")
+            try:
+                if t == "int": processed_config[meta["name"]] = int(raw_val)
+                elif t == "float": processed_config[meta["name"]] = float(raw_val)
+                elif t == "bool": processed_config[meta["name"]] = bool(raw_val)
+                else: processed_config[meta["name"]] = str(raw_val)
+            except:
+                messagebox.showerror("错误", f"参数 '{meta['label']}' 格式不正确，需要 {t} 类型")
+                return
+
+        processed_config["output_dir"] = output_dir
+        processed_config["template"] = self.template_var.get()
         
         self.btn_run.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.stop_event.clear()
         
-        threading.Thread(target=self.work_thread, args=(processor.name, config, output_dir), daemon=True).start()
+        threading.Thread(target=self.work_thread, args=(processor.name, processed_config, output_dir), daemon=True).start()
 
     def work_thread(self, p_name, config, output_dir):
         total = len(self.current_files)
