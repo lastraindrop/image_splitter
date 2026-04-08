@@ -24,7 +24,7 @@ class TextWatermark(BaseProcessor):
             {"name": "text", "label": "水印文字", "type": "str", "default": "PROTOTYPE-V4"},
             {"name": "size", "label": "字体大小 (px)", "type": "int", "default": 40},
             {"name": "opacity", "label": "不透明度 (0-255)", "type": "int", "default": 128},
-            {"name": "anchor", "label": "位置 (TL,TR,BL,BR,C)", "type": "str", "default": "BR"}
+            {"name": "anchor", "label": "位置 (TL,TR,BL,BR,C)", "type": "enum", "default": "BR", "options": ["TL", "TR", "BL", "BR", "C"]}
         ]
 
     def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
@@ -78,4 +78,5 @@ class TextWatermark(BaseProcessor):
             
             canvas.create_rectangle(px, py, px+tw, py+th, fill=theme.PRIMARY, stipple="gray50", outline="white", tags="overlay")
             canvas.create_text(px+tw//2, py+th//2, text=text[:6], fill="white", font=("Arial", 7), tags="overlay")
-        except: pass
+        except Exception:
+            pass

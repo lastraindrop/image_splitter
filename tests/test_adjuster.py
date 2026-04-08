@@ -67,5 +67,10 @@ class TestCanvasAdjuster(unittest.TestCase):
         with Image.open(self.output_dir / "test_100_adjusted.png") as img:
             self.assertEqual(img.size, (150, 50))
 
+    def test_adjust_config_fail_fast(self):
+        """无效配置应在模型层直接被拦截"""
+        with self.assertRaises(ValueError):
+            AdjustConfig(width=0, height=50, output_dir=str(self.output_dir))
+
 if __name__ == '__main__':
     unittest.main()

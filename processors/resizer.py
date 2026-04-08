@@ -15,6 +15,16 @@ class ImageResizer(BaseProcessor):
     def display_name(self) -> str:
         return "比例缩放 (Image Resizer)"
 
+    @property
+    def category(self) -> str:
+        return "Transform"
+
+    def get_ui_metadata(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": "width", "label": "宽度比例", "type": "float", "default": 1.0},
+            {"name": "height", "label": "高度比例", "type": "float", "default": 1.0}
+        ]
+
     def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
         if isinstance(config, dict):
             width = float(config.get("width", 1.0))
@@ -27,6 +37,8 @@ class ImageResizer(BaseProcessor):
         # 为了简单，我们目前仅支持比例
         target_w = int(orig_w * width)
         target_h = int(orig_h * height)
+        if target_w <= 0 or target_h <= 0:
+            raise ValueError("目标宽高必须大于 0")
         
         new_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
         

@@ -8,6 +8,23 @@ from typing import Tuple, List, Generator, Any, Optional
 from image_splitter.models import SplitConfig
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.engine.base import BaseProcessor
+from image_splitter.engine.config_coercion import coerce_processor_config
+
+
+def _prepare_image_for_save(image: Image.Image, save_format: str) -> Image.Image:
+    if save_format != 'JPEG':
+        return image
+
+    if image.mode in ('RGB', 'L', 'CMYK'):
+        return image
+
+    if image.mode in ('RGBA', 'LA') or (image.mode == 'P' and 'transparency' in image.info):
+        rgba_image = image.convert('RGBA')
+        flattened = Image.new('RGB', rgba_image.size, (255, 255, 255))
+        flattened.paste(rgba_image, mask=rgba_image.getchannel('A'))
+        return flattened
+
+    return image.convert('RGB')
 
 def register_all_processors():
     """自动化寻找并注册 processors 目录下的所有插件类"""
@@ -55,6 +72,9 @@ def process_image(
             return False, f"错误: 找不到文件 {image_path}"
             
         processor = ProcessorRegistry.get(processor_name)
+
+        if isinstance(config, dict):
+            config = coerce_processor_config(processor, config)
         
         # 1. 统一校验配置
         if hasattr(config, 'validate'):
@@ -108,14 +128,21 @@ def process_image(
                     
                 save_path = os.path.join(output_dir, safe_name)
                 
+                save_image = cell
                 try:
                     save_fmt = ext_map.get(os.path.splitext(save_path)[1].lower(), 'PNG')
+                    save_image = _prepare_image_for_save(cell, save_fmt)
                     save_args = {"format": save_fmt}
                     if save_fmt in ('JPEG', 'WEBP'):
-                        save_args["quality"] = context.get('quality', 95)
+                        save_args["quality"] = int(context.get('quality', 95))
+                    icc_profile = cell.info.get('icc_profile')
+                    if icc_profile:
+                        save_args['icc_profile'] = icc_profile
                         
-                    cell.save(save_path, **save_args)
+                    save_image.save(save_path, **save_args)
                 finally:
+                    if save_image is not cell:
+                        save_image.close()
                     if cell != orig_img:
                         cell.close()
                 count += 1

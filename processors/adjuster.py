@@ -16,6 +16,18 @@ class CanvasAdjuster(BaseProcessor):
     def display_name(self) -> str:
         return "画布调整 (Canvas Adjuster)"
 
+    @property
+    def category(self) -> str:
+        return "Transform"
+
+    def get_ui_metadata(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": "width", "label": "目标宽度 (比例或像素)", "type": "str", "default": "1.0"},
+            {"name": "height", "label": "目标高度 (比例或像素)", "type": "str", "default": "1.0"},
+            {"name": "anchor", "label": "锚点", "type": "enum", "default": "center", "options": ["center", "top-left", "top-right", "bottom-left", "bottom-right"]},
+            {"name": "bg_color", "label": "背景色 RGBA", "type": "str", "default": "(255, 255, 255, 255)"}
+        ]
+
     def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
         import ast
         
@@ -34,6 +46,8 @@ class CanvasAdjuster(BaseProcessor):
         orig_w, orig_h = image.size
         target_w = int(orig_w * width) if isinstance(width, float) else int(width)
         target_h = int(orig_h * height) if isinstance(height, float) else int(height)
+        if target_w <= 0 or target_h <= 0:
+            raise ValueError("目标宽高必须大于 0")
         
         mode = "RGBA" if "A" in image.mode or len(bg_color) > 3 else "RGB"
         new_img = Image.new(mode, (target_w, target_h), bg_color)

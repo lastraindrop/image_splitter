@@ -94,6 +94,22 @@ class TestProcessorsDeepDive(unittest.TestCase):
             is_all_black = all(p == (0, 0, 0) for p in pixels)
             self.assertTrue(is_all_black, f"参数适配错误：亮度 0 应当产出全黑图像")
 
+    def test_format_converter_flattens_alpha_for_jpeg(self):
+        """带透明通道的图像导出为 JPEG 时应自动铺底，避免保存失败"""
+        config = {
+            "format": "JPEG",
+            "quality": 90,
+            "output_dir": str(self.output_dir),
+            "template": "alpha_to_jpeg"
+        }
+        success, msg = process_image(str(self.rgba_path), "format_converter", config)
+        self.assertTrue(success, msg)
+
+        out_file = self.output_dir / "alpha_to_jpeg.jpg"
+        self.assertTrue(out_file.exists())
+        with Image.open(out_file) as img:
+            self.assertEqual(img.mode, "RGB")
+
     def test_canvas_adjuster_mixed_inputs(self):
         """规则 3: 参数组合 - float (比例) 与 int (绝对像素) 的适配"""
         test_cases = [

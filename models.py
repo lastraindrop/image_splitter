@@ -40,9 +40,16 @@ class AdjustConfig:
     bg_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
     template: str = "{filename}_adjusted"
 
+    def __post_init__(self):
+        self.validate()
+
     def validate(self):
+        if not isinstance(self.width, (int, float)) or not isinstance(self.height, (int, float)):
+            raise ValueError("目标宽高必须是数字")
         if self.width <= 0 or self.height <= 0:
             raise ValueError("目标宽高必须大于0")
+        if not self.output_dir:
+            raise ValueError("输出目录路径不能为空")
 
 @dataclass
 class CustomSplitConfig:
@@ -52,6 +59,9 @@ class CustomSplitConfig:
     output_dir: str
     template: str = "{filename}_{row}_{col}"
 
+    def __post_init__(self):
+        self.validate()
+
     def validate(self):
         if not isinstance(self.h_lines, list) or not isinstance(self.v_lines, list):
              raise ValueError("切割线必须是列表格式")
@@ -59,3 +69,5 @@ class CustomSplitConfig:
              raise ValueError("横向切割线坐标必须是非负整数")
         if any(not isinstance(x, int) or x < 0 for x in self.v_lines):
              raise ValueError("纵向切割线坐标必须是非负整数")
+        if not self.output_dir:
+             raise ValueError("输出目录路径不能为空")

@@ -11,7 +11,6 @@ image_splitter/
 ├── engine/           # 核心引擎 (通用调度与分发)
 │   ├── base.py       # 抽象基类 (BaseProcessor, BaseConfig)
 │   ├── registry.py   # 插件注册中心 (ProcessorRegistry)
-│   ├── operator.py   # 操作符接口 (Operator)
 │   └── dispatcher.py # 命令解析与链式分发 (CommandDispatcher)
 ├── processors/       # 处理插件集 (高度可扩展)
 │   ├── splitter.py   # 基础网格切割插件
@@ -59,6 +58,19 @@ image_splitter/
   - `gui.py` 会根据 `type` 自动选择控件（如 `bool` 对应勾选框）。
   - `gui.py` 在执行前会进行强制转换与校验，确保输入数据不破坏后端 Operator 的运行。
 - **系统级变量**: `core.py` 默认提供 `{w}`, `{h}`, `{index}`, `{filename}` 变量。
+
+### 增量实践（已落地）
+
+为避免前端/dispatcher/processor 三层的类型漂移，项目新增了一套轻量级的 coercion 实践：
+
+- 已新增 `engine/config_coercion.py`，提供 `coerce_processor_config(processor, raw_config)`，用于把来自 GUI/CLI/dispatcher 的原始输入统一转换为处理器期望的类型与键名。
+- 请在每个处理器的 `get_ui_metadata()` 中为每个字段显式提供 `default` 值（即使为 `null` 或空值），以保证 coercion 并避免运行时 KeyError。
+- 已有自动化测试位于 `tests/test_config_coercion.py` 与 `tests/test_parameter_contract.py`（新增），用于保证元数据完整性和默认值的 coercion 行为。
+
+短期约束:
+
+- 任何新增处理器必须包含完整的 `name` / `type` / `default` /（可选）`options` 字段。
+- 若某字段需要多语义支持（如既可为比例又可为像素），建议在 `type` 上使用 `str` 并在 `process()` 中使用明确的解析逻辑，同时在 `get_ui_metadata()` 文案中清晰注明预期格式。
 
 ## 测试与质量 (Testing Standards)
 

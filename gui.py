@@ -19,6 +19,7 @@ import subprocess
 from PIL import Image, ImageTk
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
+from image_splitter.engine.config_coercion import coerce_processor_config
 
 class UITheme:
     """现代工业风主题配置"""
@@ -32,6 +33,8 @@ class UITheme:
     DANGER = "#ef4444"       # 错误红
     BORDER = "#333333"       # 边框色
     SELECT = "#264f78"       # 选中蓝
+    PRIMARY = ACCENT
+    INFO = ACCENT
 
 class ImageSplitterApp:
     def __init__(self, root):
@@ -174,6 +177,20 @@ class ImageSplitterApp:
         self.file_listbox.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=5)
         self.file_listbox.bind("<<ListboxSelect>>", self._on_file_selected)
 
+        # 底部状态栏
+        self.status_container = tk.Frame(self.right_container, bg=self.theme.DARK_BG)
+        self.status_container.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(0, 10))
+
+        self.progress_var = tk.DoubleVar()
+        self.progress = ttk.Progressbar(self.status_container, length=100, mode='determinate',
+                                        variable=self.progress_var, style="Modern.Horizontal.TProgressbar")
+        self.progress.pack(fill=tk.X, pady=(5, 5))
+
+        self.status_label = tk.Label(self.status_container, text="READY", font=("Consolas", 8), bg=self.theme.DARK_BG, fg=self.theme.DIM_FG)
+        self.status_label.pack(side=tk.LEFT)
+
+        self._on_processor_changed()
+
     def remove_selected(self):
         indices = sorted(self.file_listbox.curselection(), reverse=True)
         for i in indices:
@@ -189,24 +206,6 @@ class ImageSplitterApp:
             self.current_files = []
             self.thumb_img = None
             self.canvas.delete("all")
-
-        # 底部状态栏
-        self.status_container = tk.Frame(self.right_container, bg=self.theme.DARK_BG)
-        self.status_container.pack(side=tk.BOTTOM, fill=tk.X, padx=15, pady=(0, 10))
-
-        self.progress_var = tk.DoubleVar()
-        self.progress = ttk.Progressbar(self.status_container, length=100, mode='determinate', 
-                                        variable=self.progress_var, style="Modern.Horizontal.TProgressbar")
-        self.progress.pack(fill=tk.X, pady=(5, 5))
-        
-        self.status_label = tk.Label(self.status_container, text="READY", font=("Consolas", 8), bg=self.theme.DARK_BG, fg=self.theme.DIM_FG)
-        self.status_label.pack(side=tk.LEFT)
-
-        # 初始化参数列表
-        self._on_processor_changed()
-
-        # 初始化参数列表
-        self._on_processor_changed()
 
     def _on_processor_changed(self, event=None):
         """当处理器切换时，动态生成 UI 参数组件"""
@@ -231,6 +230,14 @@ class ImageSplitterApp:
                 cb = tk.Checkbutton(frame, variable=var, bg=self.theme.PANEL_BG, activebackground=self.theme.PANEL_BG,
                                     command=self.fast_update_preview, selectcolor=self.theme.DARK_BG)
                 cb.pack(side=tk.RIGHT)
+            elif p_type == "enum":
+                default = str(meta["default"])
+                var = tk.StringVar(value=default)
+                self.dynamic_vars[meta["name"]] = var
+                combo = ttk.Combobox(frame, textvariable=var, values=meta.get("options", [default]),
+                                     state="readonly", font=("Microsoft YaHei UI", 9), width=12)
+                combo.pack(side=tk.RIGHT)
+                combo.bind("<<ComboboxSelected>>", lambda e: self.fast_update_preview())
             else:
                 var = tk.StringVar(value=str(meta["default"]))
                 self.dynamic_vars[meta["name"]] = var
@@ -254,19 +261,12 @@ class ImageSplitterApp:
         processor = next((p for p in ProcessorRegistry.list_all() if p.display_name == display_name), None)
         if not processor: return
 
-        # 参数清洗与类型转换 (防止 Entry 传出纯字符串导致 backend 崩溃)
-        processed_config = {}
-        for meta in processor.get_ui_metadata():
-            raw_val = self.dynamic_vars[meta["name"]].get()
-            t = meta.get("type", "str")
-            try:
-                if t == "int": processed_config[meta["name"]] = int(raw_val)
-                elif t == "float": processed_config[meta["name"]] = float(raw_val)
-                elif t == "bool": processed_config[meta["name"]] = bool(raw_val)
-                else: processed_config[meta["name"]] = str(raw_val)
-            except:
-                messagebox.showerror("错误", f"参数 '{meta['label']}' 格式不正确，需要 {t} 类型")
-                return
+        raw_config = {meta["name"]: self.dynamic_vars[meta["name"]].get() for meta in processor.get_ui_metadata()}
+        try:
+            processed_config = coerce_processor_config(processor, raw_config)
+        except ValueError as exc:
+            messagebox.showerror("错误", str(exc))
+            return
 
         processed_config["output_dir"] = output_dir
         processed_config["template"] = self.template_var.get()
@@ -296,7 +296,8 @@ class ImageSplitterApp:
         self.root.after(0, lambda: self.finish_report(success_count, total))
         # 完成后尝试打开目录
         try: os.startfile(output_dir) if platform.system() == "Windows" else None
-        except: pass
+        except Exception:
+            pass
 
     def update_progress(self, p, msg):
         self.progress_var.set(p)
@@ -360,7 +361,7 @@ class ImageSplitterApp:
                 thumb.thumbnail((1200, 1200))
                 self.thumb_img = thumb
             self._render_canvas()
-        except:
+        except Exception:
             self.thumb_img = None
             self.canvas.delete("all")
 

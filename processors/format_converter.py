@@ -21,7 +21,7 @@ class ImageFormatConverter(BaseProcessor):
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "format", "label": "目标格式", "type": "str", "default": "WebP"},
+            {"name": "format", "label": "目标格式", "type": "enum", "default": "WebP", "options": ["WebP", "JPEG", "PNG", "BMP"]},
             {"name": "quality", "label": "质量 (1-100)", "type": "int", "default": 80}
         ]
 

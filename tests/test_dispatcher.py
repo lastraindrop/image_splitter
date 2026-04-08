@@ -2,7 +2,7 @@
 import unittest
 from PIL import Image
 from image_splitter.engine.dispatcher import CommandDispatcher
-from image_splitter.core import split_image_core # 确保注册了处理器
+from image_splitter.engine.registry import ProcessorRegistry
 
 class TestDispatcher(unittest.TestCase):
     def test_parse_simple(self):
@@ -13,7 +13,17 @@ class TestDispatcher(unittest.TestCase):
         self.assertEqual(ops[0][1]["rows"], 3)
         self.assertEqual(ops[0][1]["cols"], 2)
 
+    def test_parse_complex_literals(self):
+        cmd = "custom_splitter(h_lines=[20, 80], v_lines=[30]) | grid_splitter(offsets=(1, 2, 3, 4)) | text_watermark(text='A,B', anchor='BR')"
+        ops = CommandDispatcher.parse_command(cmd)
+        self.assertEqual(ops[0][1]["h_lines"], [20, 80])
+        self.assertEqual(ops[0][1]["v_lines"], [30])
+        self.assertEqual(ops[1][1]["offsets"], (1, 2, 3, 4))
+        self.assertEqual(ops[2][1]["text"], "A,B")
+        self.assertEqual(ops[2][1]["anchor"], "BR")
+
     def test_execute_chain_mock(self):
+        ProcessorRegistry.reset()
         # 创建 100x100 图片
         img = Image.new("RGB", (100, 100))
         # 链式调用: 先切成 2x2 (生成 50x50)，逻辑上分发器目前会返回所有结果图片

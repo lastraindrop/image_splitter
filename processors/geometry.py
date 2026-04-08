@@ -57,4 +57,5 @@ class GeometryProcessor(BaseProcessor):
             cx, cy = x0 + cw//2, y0 + ch//2
             canvas.create_oval(cx-20, cy-20, cx+20, cy+20, outline=theme.PRIMARY, width=2, tags="overlay")
             canvas.create_text(cx, cy, text=f"{angle}°", fill=theme.PRIMARY, font=("Arial", 10, "bold"), tags="overlay")
-        except: pass
+        except Exception:
+            pass

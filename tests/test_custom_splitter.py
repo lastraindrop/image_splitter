@@ -76,12 +76,11 @@ class TestCustomSplitter(unittest.TestCase):
     def test_custom_split_negative_forbidden(self):
         """测试负数线已被模型拦截"""
         with self.assertRaises(ValueError) as ctx:
-            config = CustomSplitConfig(
+            CustomSplitConfig(
                 h_lines=[-10],
                 v_lines=[50],
                 output_dir=str(self.output_dir)
             )
-            config.validate()
         self.assertIn("非负整数", str(ctx.exception))
 
 if __name__ == '__main__':

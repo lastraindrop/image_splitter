@@ -57,6 +57,12 @@ class TestOperatorCompliance(unittest.TestCase):
                     self.assertIn("type", field, f"Field '{field['name']}' in {p.name} missing 'type' (required for UI rendering)")
                     self.assertIn(field["type"], valid_types, f"Unsupported type '{field['type']}' in {p.name}")
 
+    def test_all_processors_are_gui_addressable(self):
+        """动态 UI 架构下，每个处理器都应提供可编辑的参数元数据"""
+        for p in ProcessorRegistry.list_all():
+            with self.subTest(processor=p.name):
+                self.assertGreater(len(p.get_ui_metadata()), 0, f"{p.name} 缺少 GUI 元数据，无法在动态界面中配置")
+
     def test_documentation_completeness(self):
         """文档化指标：验证是否有操作提示，这是专业软件的必备要素"""
         for p in ProcessorRegistry.list_all():

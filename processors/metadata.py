@@ -54,4 +54,5 @@ class MetadataProcessor(BaseProcessor):
             
             x0, y0 = canvas_pos
             canvas.create_text(x0 + 10, y0 + 10, text="🛡 隐私保护已开启", fill=theme.SUCCESS, anchor="nw", font=("Arial", 8), tags="overlay")
-        except: pass
+        except Exception:
+            pass

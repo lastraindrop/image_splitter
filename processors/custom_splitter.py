@@ -17,6 +17,16 @@ class CustomLineSplitter(BaseProcessor):
     def display_name(self) -> str:
         return "比例切割 (Custom Lines)"
 
+    @property
+    def category(self) -> str:
+        return "Split"
+
+    def get_ui_metadata(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": "h_lines", "label": "横向切割线", "type": "list", "default": [50]},
+            {"name": "v_lines", "label": "纵向切割线", "type": "list", "default": [50]}
+        ]
+
     def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
         if isinstance(config, dict):
             h_lines = config.get("h_lines", [])
@@ -48,3 +58,24 @@ class CustomLineSplitter(BaseProcessor):
                 count += 1
                 
         return results
+
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+        try:
+            raw_h = props.get("h_lines").get()
+            raw_v = props.get("v_lines").get()
+            h_lines = ast.literal_eval(raw_h) if isinstance(raw_h, str) else raw_h
+            v_lines = ast.literal_eval(raw_v) if isinstance(raw_v, str) else raw_v
+
+            cw, ch = thumb_size
+            x0, y0 = canvas_pos
+
+            for line in h_lines:
+                y = y0 + int(int(line) * ratio)
+                if y0 < y < y0 + ch:
+                    canvas.create_line(x0, y, x0 + cw, y, fill=theme.INFO, dash=(4, 4), tags="overlay")
+            for line in v_lines:
+                x = x0 + int(int(line) * ratio)
+                if x0 < x < x0 + cw:
+                    canvas.create_line(x, y0, x, y0 + ch, fill=theme.INFO, dash=(4, 4), tags="overlay")
+        except Exception:
+            pass
