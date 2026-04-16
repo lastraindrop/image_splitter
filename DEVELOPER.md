@@ -22,14 +22,13 @@ image_splitter/
 ├── gui.py            # 动态 UI 平台 (基于强类型 Metadata 自动渲染)
 ├── cli.py            # 高性能 CLI (支持路径自修复与并发)
 └── tests/            # 自动化测试套件
-    └── test_operator_compliance.py # 架构合规性审计脚本
 ```
 
 ## 核心设计准则
 
 1. **一切皆操作符 (Operator Pattern)**：
    - 每一个处理功能（如切割、缩放）都被抽象为一个 `Processor` 插件。
-   - 核心引擎通过 `Registry` 发现插件，并通过 `CommandDispatcher` 支持字符串形式的指令调用（如 `split(rows=3) | resize(w=512)`）。
+   - 核心引擎通过 `Registry` 发现插件，并通过 `CommandDispatcher` 支持字符串形式的指令调用。
 
 2. **UI 动态对齐 (Dynamic Metadata-Driven UI)**：
    - 处理器通过 `get_ui_metadata()` 自描述所需参数。
@@ -44,43 +43,32 @@ image_splitter/
    - 所有外部输入必须在执行 I/O 前完成类型、范围及物理合法性校验。
    - 模型层 (`models.py`) 负责统一的参数结构化，核心层 (`core.py`) 负责业务逻辑校验。
 
+5. **代码风格与工程规范 (Google Python Style)**：
+   - 全线遵循 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)。
+   - 核心函数必须配备完整的 Google Style Docstrings (Args/Returns/Raises)。
+   - 路径处理强制使用 `pathlib.Path` 以确保跨平台健壮性。
+   - 逻辑层禁止使用 `print()`，统一采用标准 `logging` 模块。
+
 ## 扩展一个新功能
 1. 在 `processors/` 目录下新建 Python 脚本，继承 `BaseProcessor`。
 2. 实现 `process()` 核心逻辑和 `get_ui_metadata()` 参数定义。
-3. **重要 (参数对齐协议)**: 在 `process()` 返回的 `context` 字典中，需包含该处理器的核心元数据（如 `anchor`, `text` 等），以支持用户在命名模板中动态引用（见下文）。
-4. 系统核心 `register_all_processors()` 会自动扫描并完成加载。无需手动在 `core.py` 中注册。
-5. 运行 `python gui.py` 或 `cli.py` 即刻生效。
+3. **重要 (强类型模型绑定)**: 必须在 `models.py` 中定义对应的 `dataclass` 配置模型，并在处理器的 `config_model` 属性中关联。
+4. **重要 (参数对齐协议)**: 在 `process()` 返回的 `context` 字典中，需包含该处理器的核心元数据（如 `anchor`, `text` 等），以支持用户在命名模板中动态引用。
+5. 系统核心 `register_all_processors()` 会自动扫描并完成加载。
+6. 运行 `python gui.py` 或 `cli.py` 即刻生效。
 
 ## Context 注入协议与强类型校验 (Parameter Consistency)
 为了通过“动态对齐”解决外部变量命名冲突并确保 UI 交互的稳定性，规定：
-- **Context 注入**: 处理器必须将核心参数（如 `rotate`, `text`）注入返回的 `context` 中，以支持命名模板的动态变量。
-- **强类型约定**: `get_ui_metadata` 必须包含 `type` 字段 (`int`, `float`, `bool`, `str`)。
-  - `gui.py` 会根据 `type` 自动选择控件（如 `bool` 对应勾选框）。
-  - `gui.py` 在执行前会进行强制转换与校验，确保输入数据不破坏后端 Operator 的运行。
+- **模型驱动 (Model-Driven)**: 所有处理器参数必须通过 `models.py` 中的模型进行预校验。
+- **coercion 机制**: 原始输入（CLI 字符串或 GUI 变量）必须通过 `coerce_processor_config` 进行物理类型转换，确保数据类型与 `config_model` 严格对齐。
+- **Context 注入**: 处理器必须将核心参数注入返回的 `context` 中，以支持命名模板。
 - **系统级变量**: `core.py` 默认提供 `{w}`, `{h}`, `{index}`, `{filename}` 变量。
 
-### 增量实践（已落地）
+### 增量实践（V5.5 交付版）
 
-为避免前端/dispatcher/processor 三层的类型漂移，项目新增了一套轻量级的 coercion 实践：
-
-- 已新增 `engine/config_coercion.py`，提供 `coerce_processor_config(processor, raw_config)`，用于把来自 GUI/CLI/dispatcher 的原始输入统一转换为处理器期望的类型与键名。
-- 请在每个处理器的 `get_ui_metadata()` 中为每个字段显式提供 `default` 值（即使为 `null` 或空值），以保证 coercion 并避免运行时 KeyError。
-- 已有自动化测试位于 `tests/test_config_coercion.py` 与 `tests/test_parameter_contract.py`（新增），用于保证元数据完整性和默认值的 coercion 行为。
-
-短期约束:
-
-- 任何新增处理器必须包含完整的 `name` / `type` / `default` /（可选）`options` 字段。
-- 若某字段需要多语义支持（如既可为比例又可为像素），建议在 `type` 上使用 `str` 并在 `process()` 中使用明确的解析逻辑，同时在 `get_ui_metadata()` 文案中清晰注明预期格式。
-
-## 测试与质量 (Testing Standards)
-
-- **执行指令**：`$env:PYTHONPATH='.'; pytest tests` 
-- **核心全量测试集 (V5.0)**：
-  - `test_engine_v4.py`: 插件自动发现与协议一致性。
-  - `test_processors_expanded.py`: 深度参数组合适配。
-  - `test_cli.py`: 高并发与递归扫描。
-  - `test_dispatcher.py`: 指令链式分发分流稳定性。
-  - `test_operator_compliance.py`: **架构审计** - 验证所有插件的协议合规性。
+- **Pathlib 化**: 彻底解耦 `os.path`，核心逻辑不再依赖原始字符串路径。
+- **日志审计**: `core.py` 已接入标准 `logging` 架构。
+- **契约测试**: 强制执行 `test_parameter_contract.py`，确保所有插件的元数据与强制转换逻辑匹配。
 
 ---
 
@@ -91,13 +79,13 @@ image_splitter/
 - [x] **功能库大扩容**：集成几何变换、滤镜、元数据清理、水印等 10+ 核心模块。
 - [x] **架构合规审计**：实现自动化插件协议检测（Compliance Testing）。
 - [x] **UI 交互增强**：自适应控件（勾选框/文本框）与强类型参数校验。
-- [x] **路径自修复**：解决跨目录启动时的 ModuleNotFoundError 导入问题。
+- [x] **V5.5 工程重构**：全面适配 Google Python Style，引入 `pathlib` 与 `logging`。
 
 ### 🗓 短期计划 (Short-Term Goals)
+- [ ] **静态类型审计 (Mypy)**：引入 `mypy` 进行全量类型扫描，消除 `Any` 类型遗留。
 - [ ] **可视化 Pipeline 编辑器**：允许用户在 GUI 中拖拽处理器卡片。
 - [ ] **宏录制与控制台 (Macro Console)**：实时显示操作指令并支持保存为脚本。
-- [ ] **Keymap 绑定系统**：支持用户自定义快捷键触发操作符。
 
 ### 🚀 长期计划 (Long-Term Goals)
-- [ ] **跨平台 WASM 发行版**：支持浏览器端直接进行高性能纯离线处理。
 - [ ] **分布式处理中台**：通过 RPC 协议将巨型渲染任务分发至多个节点。
+- [ ] **跨平台 WASM 发行版**：支持浏览器端直接进行高性能纯离线处理。

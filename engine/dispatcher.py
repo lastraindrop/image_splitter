@@ -54,10 +54,14 @@ class CommandDispatcher:
         
         for op_name, props in ops:
             processor = ProcessorRegistry.get(op_name)
-            next_step_images = []
             
+            # 对参数进行类型清洗与默认值补全
+            from image_splitter.engine.config_coercion import coerce_processor_config
+            coerced_props = coerce_processor_config(processor, props)
+            
+            next_step_images = []
             for img in current_images:
-                results = processor.process(img, props)
+                results = processor.process(img, coerced_props)
                 for res_img, _ in results:
                     next_step_images.append(res_img)
                 

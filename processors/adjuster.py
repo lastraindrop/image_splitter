@@ -1,13 +1,22 @@
 # image_splitter/processors/adjuster.py
+from typing import Any, Dict, List, Tuple
+
 from PIL import Image
-from typing import List, Dict, Any, Tuple
+
 from image_splitter.engine.base import BaseProcessor
 from image_splitter.models import AdjustConfig
 
+
 class CanvasAdjuster(BaseProcessor):
+    """画布调整处理器。
+    
+    支持调整画布边界，包括扩充（Padding）或裁剪（Cropping）。
     """
-    画布调整处理器：增添/裁剪/填充
-    """
+
+    @property
+    def config_model(self) -> type:
+        return AdjustConfig
+
     @property
     def name(self) -> str:
         return "canvas_adjuster"
@@ -20,34 +29,44 @@ class CanvasAdjuster(BaseProcessor):
     def category(self) -> str:
         return "Transform"
 
+    @property
+    def tool_tip(self) -> str:
+        return "调整画布的边界，支持扩充或裁剪 (Canvas Adjuster)。"
+
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
             {"name": "width", "label": "目标宽度 (比例或像素)", "type": "str", "default": "1.0"},
             {"name": "height", "label": "目标高度 (比例或像素)", "type": "str", "default": "1.0"},
-            {"name": "anchor", "label": "锚点", "type": "enum", "default": "center", "options": ["center", "top-left", "top-right", "bottom-left", "bottom-right"]},
-            {"name": "bg_color", "label": "背景色 RGBA", "type": "str", "default": "(255, 255, 255, 255)"}
+            {
+                "name": "anchor", 
+                "label": "锚点", 
+                "type": "enum", 
+                "default": "center", 
+                "options": ["center", "top-left", "top-right", "bottom-left", "bottom-right"]
+            },
+            {"name": "bg_color", "label": "背景色 RGBA", "type": "list", "default": [255, 255, 255, 255]}
         ]
 
-    def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        import ast
+    def process(
+        self, 
+        image: Image.Image, 
+        config: Dict[str, Any]
+    ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        """执行画布调整。"""
+        width = config.get("width", 1.0)
+        height = config.get("height", 1.0)
+        anchor = config.get("anchor", "center")
+        bg_color = tuple(config.get("bg_color", [255, 255, 255, 255]))
         
-        if isinstance(config, dict):
-            width = config.get("width", 1.0)
-            height = config.get("height", 1.0)
-            anchor = config.get("anchor", "center")
-            bg_color = config.get("bg_color", "(255, 255, 255, 255)")
-            
-            if isinstance(width, str): width = float(width) if '.' in width else int(width)
-            if isinstance(height, str): height = float(height) if '.' in height else int(height)
-            if isinstance(bg_color, str): bg_color = ast.literal_eval(bg_color)
-        else:
-            width, height, anchor, bg_color = config.width, config.height, config.anchor, config.bg_color
+        # 处理可能的字符串输入
+        if isinstance(width, str):
+            width = float(width) if '.' in width else int(width)
+        if isinstance(height, str):
+            height = float(height) if '.' in height else int(height)
 
         orig_w, orig_h = image.size
         target_w = int(orig_w * width) if isinstance(width, float) else int(width)
         target_h = int(orig_h * height) if isinstance(height, float) else int(height)
-        if target_w <= 0 or target_h <= 0:
-            raise ValueError("目标宽高必须大于 0")
         
         mode = "RGBA" if "A" in image.mode or len(bg_color) > 3 else "RGB"
         new_img = Image.new(mode, (target_w, target_h), bg_color)

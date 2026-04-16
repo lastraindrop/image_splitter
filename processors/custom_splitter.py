@@ -1,14 +1,23 @@
 # image_splitter/processors/custom_splitter.py
 import ast
+from typing import Any, Dict, List, Tuple
+
 from PIL import Image
-from typing import List, Dict, Any, Tuple
+
 from image_splitter.engine.base import BaseProcessor
 from image_splitter.models import CustomSplitConfig
 
+
 class CustomLineSplitter(BaseProcessor):
+    """基于自定义坐标线的切割处理器。
+    
+    允许在指定像素坐标处添加横向或纵向切割线。
     """
-    基于自定义坐标线的切割处理器
-    """
+
+    @property
+    def config_model(self) -> type:
+        return CustomSplitConfig
+
     @property
     def name(self) -> str:
         return "custom_splitter"
@@ -21,23 +30,27 @@ class CustomLineSplitter(BaseProcessor):
     def category(self) -> str:
         return "Split"
 
+    @property
+    def tool_tip(self) -> str:
+        return "在指定像素坐标处添加横向或纵向切割线 (Custom Lines)。"
+
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
             {"name": "h_lines", "label": "横向切割线", "type": "list", "default": [50]},
             {"name": "v_lines", "label": "纵向切割线", "type": "list", "default": [50]}
         ]
 
-    def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        if isinstance(config, dict):
-            h_lines = config.get("h_lines", [])
-            v_lines = config.get("v_lines", [])
-            if isinstance(h_lines, str): h_lines = ast.literal_eval(h_lines)
-            if isinstance(v_lines, str): v_lines = ast.literal_eval(v_lines)
-        else:
-            h_lines, v_lines = config.h_lines, config.v_lines
+    def process(
+        self, 
+        image: Image.Image, 
+        config: Dict[str, Any]
+    ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        """执行自定义线切割。"""
+        h_lines = config.get("h_lines", [])
+        v_lines = config.get("v_lines", [])
 
         w, h = image.size
-        # 生成边界点并去重排序: [0, y1, y2, ..., h]
+        # 生成边界点并去重排序
         y_points = sorted(list(set([0, h] + [y for y in h_lines if 0 < y < h])))
         x_points = sorted(list(set([0, w] + [x for x in v_lines if 0 < x < w])))
         
@@ -61,10 +74,16 @@ class CustomLineSplitter(BaseProcessor):
 
     def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
         try:
-            raw_h = props.get("h_lines").get()
-            raw_v = props.get("v_lines").get()
-            h_lines = ast.literal_eval(raw_h) if isinstance(raw_h, str) else raw_h
-            v_lines = ast.literal_eval(raw_v) if isinstance(raw_v, str) else raw_v
+            def get_val(key):
+                v = props.get(key)
+                return v.get() if hasattr(v, 'get') else v
+
+            h_lines = get_val("h_lines")
+            v_lines = get_val("v_lines")
+            if isinstance(h_lines, str):
+                h_lines = ast.literal_eval(h_lines)
+            if isinstance(v_lines, str):
+                v_lines = ast.literal_eval(v_lines)
 
             cw, ch = thumb_size
             x0, y0 = canvas_pos

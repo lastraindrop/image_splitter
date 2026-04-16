@@ -1,12 +1,22 @@
-# processors/watermark.py
+# image_splitter/processors/watermark.py
+from typing import Any, Dict, List, Tuple
+
 from PIL import Image, ImageDraw, ImageFont
-from typing import List, Dict, Any, Tuple
+
 from image_splitter.engine.base import BaseProcessor
+from image_splitter.models import WatermarkConfig
+
 
 class TextWatermark(BaseProcessor):
+    """文字水印处理器。
+    
+    支持在图像的五个指定位置添加半透明文字水印。
     """
-    文字水印处理器
-    """
+
+    @property
+    def config_model(self) -> type:
+        return WatermarkConfig
+
     @property
     def name(self) -> str:
         return "text_watermark"
@@ -19,19 +29,34 @@ class TextWatermark(BaseProcessor):
     def category(self) -> str:
         return "Edit"
 
+    @property
+    def tool_tip(self) -> str:
+        return "在图像指定位置添加半透明文字水印 (Text Watermark)。"
+
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "text", "label": "水印文字", "type": "str", "default": "PROTOTYPE-V4"},
-            {"name": "size", "label": "字体大小 (px)", "type": "int", "default": 40},
-            {"name": "opacity", "label": "不透明度 (0-255)", "type": "int", "default": 128},
-            {"name": "anchor", "label": "位置 (TL,TR,BL,BR,C)", "type": "enum", "default": "BR", "options": ["TL", "TR", "BL", "BR", "C"]}
+            {"name": "text", "label": "水印文字", "type": "str", "default": "PROTOTYPE"},
+            {"name": "size", "label": "字体大小", "type": "int", "default": 40},
+            {"name": "opacity", "label": "不透明度", "type": "int", "default": 128},
+            {
+                "name": "anchor", 
+                "label": "位置", 
+                "type": "enum", 
+                "default": "BR", 
+                "options": ["TL", "TR", "BL", "BR", "C"]
+            }
         ]
 
-    def process(self, image: Image.Image, config: Any) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        if isinstance(config, dict):
-            text, size, opacity, anchor = config.get("text", ""), config.get("size", 40), config.get("opacity", 128), config.get("anchor", "BR")
-        else:
-            text, size, opacity, anchor = config.text, config.size, config.opacity, config.anchor
+    def process(
+        self, 
+        image: Image.Image, 
+        config: Dict[str, Any]
+    ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        """添加文字水印。"""
+        text = config.get("text", "")
+        size = int(config.get("size", 40))
+        opacity = int(config.get("opacity", 128))
+        anchor = config.get("anchor", "BR")
 
         img = image.convert("RGBA")
         txt_layer = Image.new("RGBA", img.size, (255, 255, 255, 0))
@@ -39,7 +64,7 @@ class TextWatermark(BaseProcessor):
         
         try:
             font = ImageFont.truetype("arial.ttf", size)
-        except:
+        except Exception:
             font = ImageFont.load_default()
             
         w, h = img.size
@@ -47,11 +72,16 @@ class TextWatermark(BaseProcessor):
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         
         padding = 20
-        if anchor == "TL": x, y = padding, padding
-        elif anchor == "TR": x, y = w - tw - padding, padding
-        elif anchor == "BL": x, y = padding, h - th - padding
-        elif anchor == "BR": x, y = w - tw - padding, h - th - padding
-        else: x, y = (w - tw) // 2, (h - th) // 2 
+        if anchor == "TL": 
+            x, y = padding, padding
+        elif anchor == "TR": 
+            x, y = w - tw - padding, padding
+        elif anchor == "BL": 
+            x, y = padding, h - th - padding
+        elif anchor == "BR": 
+            x, y = w - tw - padding, h - th - padding
+        else: 
+            x, y = (w - tw) // 2, (h - th) // 2 
         
         draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
         out = Image.alpha_composite(img, txt_layer)
@@ -62,21 +92,31 @@ class TextWatermark(BaseProcessor):
 
     def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
         try:
-            anchor = props.get("anchor").get() or "BR"
-            text = props.get("text").get() or "PREVIEW"
+            def get_val(key):
+                v = props.get(key)
+                return v.get() if hasattr(v, 'get') else v
+
+            anchor = get_val("anchor") or "BR"
+            text = get_val("text") or "PREVIEW"
             
             cw, ch = thumb_size
             x0, y0 = canvas_pos
             
             tw, th = 60, 20
             m = 10
-            if anchor == "TL": px, py = x0+m, y0+m
-            elif anchor == "TR": px, py = x0+cw-tw-m, y0+m
-            elif anchor == "BL": px, py = x0+m, y0+ch-th-m
-            elif anchor == "BR": px, py = x0+cw-tw-m, y0+ch-th-m
-            else: px, py = x0+(cw-tw)//2, y0+(ch-th)//2
+            if anchor == "TL": px, py = x0 + m, y0 + m
+            elif anchor == "TR": px, py = x0 + cw - tw - m, y0 + m
+            elif anchor == "BL": px, py = x0 + m, y0 + ch - th - m
+            elif anchor == "BR": px, py = x0 + cw - tw - m, y0 + ch - th - m
+            else: px, py = x0 + (cw - tw) // 2, y0 + (ch - th) // 2
             
-            canvas.create_rectangle(px, py, px+tw, py+th, fill=theme.PRIMARY, stipple="gray50", outline="white", tags="overlay")
-            canvas.create_text(px+tw//2, py+th//2, text=text[:6], fill="white", font=("Arial", 7), tags="overlay")
+            canvas.create_rectangle(
+                px, py, px + tw, py + th, 
+                fill=theme.PRIMARY, stipple="gray50", outline="white", tags="overlay"
+            )
+            canvas.create_text(
+                px + tw // 2, py + th // 2, 
+                text=text[:6], fill="white", font=("Arial", 7), tags="overlay"
+            )
         except Exception:
             pass
