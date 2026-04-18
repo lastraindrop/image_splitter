@@ -1,11 +1,18 @@
 from .core import process_image, split_image_core, batch_process_images
-from .models import SplitConfig, AdjustConfig, CustomSplitConfig
+from .models import SplitConfig, AdjustConfig, CustomSplitConfig, ResizeConfig
+
+from .logging_config import configure_logging, get_logger, setup_default_logging
+
+setup_default_logging()
 
 __all__ = [
-    "process_image", 
-    "split_image_core", 
-    "batch_process_images", 
-    "SplitConfig", 
-    "AdjustConfig", 
-    "CustomSplitConfig"
+    "process_image",
+    "split_image_core",
+    "batch_process_images",
+    "SplitConfig",
+    "AdjustConfig",
+    "CustomSplitConfig",
+    "ResizeConfig",
+    "configure_logging",
+    "get_logger",
 ]

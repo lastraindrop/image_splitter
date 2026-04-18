@@ -1,9 +1,24 @@
 # image_splitter/engine/registry.py
 from typing import Dict, Any, List
 
+_global_registry: "ProcessorRegistry" = None
+
+
 class ProcessorRegistry:
-    """集中式处理器注册中心"""
+    """集中式处理器注册中心 (支持实例化和全局单例模式)"""
+
     _processors: Dict[str, Any] = {}
+
+    def __init__(self):
+        pass
+
+    @classmethod
+    def get_global_registry(cls) -> "ProcessorRegistry":
+        """获取全局单例注册中心 (用于实例化调用场景)"""
+        global _global_registry
+        if _global_registry is None:
+            _global_registry = cls()
+        return _global_registry
 
     @classmethod
     def register(cls, processor):

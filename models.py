@@ -100,6 +100,20 @@ class FormatConfig:
 
 
 @dataclass
+class ResizeConfig:
+    """图像缩放配置模型。"""
+    width: float = 1.0
+    height: float = 1.0
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self):
+        if self.width <= 0 or self.height <= 0:
+            raise ValueError("缩放比例必须大于 0")
+
+
+@dataclass
 class GeometryConfig:
     """几何变换配置模型。"""
     rotate: int = 0

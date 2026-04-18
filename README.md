@@ -1,53 +1,141 @@
-# 通用图像处理平台 (Advanced Image Processor)
+# Image Splitter Pro
 
-一个对齐 Blender 操作符哲学、具备高性能多核并发能力的图像处理框架。支持网格切割、自定义线切、缩放、画布调整等多种功能。
+A lightweight, modular image processing framework with Blender-like operator philosophy. Supports grid splitting, custom line cutting, resizing, canvas adjustment, and more.
 
-## 🌟 核心功能
+## Features
 
-- **一切皆操作符 (Operators)**：底层逻辑与 UI 彻底解耦。支持 Blender 风格的操作符调用日志与指令分发。
-- **动态 UI 适配**：GUI 采用 **Metadata-Driven (元数据驱动)** 技术。添加新功能只需增加插件，界面会自动生成参数面板。
-- **高性能引擎**：CLI 版本默认开启 **多进程并行 (Multi-processing)**，处理效率领先同类工具 4-8 倍。
-- **工业级安全性**：严格执行 Pillow 句柄管理，内置 **路径穿越 (Path Traversal)** 拦截，确保系统环境安全。
-- **自定义线切割**：超越简单的网格，支持在任意像素位置进行横向或纵向的精确分割。
-- **画布高级调整**：支持画布扩充 (Padding)、裁剪 (Cropping) 及自定义背景色填充。
-- **指令控制台 (Console)**：GUI 实时记录操作指令，方便学习与脚本复用。
+### Core Philosophy
+- **Everything as Operators**: Complete decoupling between core logic and UI. Supports Blender-style operator invocation logs and command dispatching.
+- **Metadata-Driven UI**: GUI automatically generates parameter panels based on processor metadata. Adding new features only requires implementing a plugin.
+- **High-Performance Engine**: CLI version uses multi-processing by default, delivering 4-8x performance improvement.
+- **Industrial-Grade Safety**: Strict Pillow handle management with Path Traversal interception.
+- **Custom Line Cutting**: Supports arbitrary pixel positions for horizontal/vertical splitting.
+- **Advanced Canvas Adjustment**: Support for padding, cropping, and custom background colors.
 
-## 🚀 快速开始
+## Quick Start
 
-1. **安装环境**：
-   ```bash
-   pip install Pillow
-   ```
-2. **启动图形界面**：
-   ```bash
-   python gui.py
-   ```
-3. **使用命令行接口 (CLI)**：
-   ```bash
-   # 将 test.png 切割为 3x3 规格，并开启 8 进程并行加速
-   python cli.py test.png -r 3 -c 3 -o ./output -j 8
-   ```
+### Installation
 
-## 📦 插件库 (Processors)
-- `grid_splitter`: 基础网格分割。
-- `custom_splitter`: 自定义坐标分割。
-- `resizer`: 通用图像缩放。
-- `canvas_adjuster`: 画布边界调整与填充。
-- `format_converter`: WebP/JPEG/PNG 格式转换与质量控制。
-- `geometry`: **(New)** 图像旋转 (Rotate) 与轴向翻转 (Flip)。
-- `filters`: **(New)** 极速灰度化与底片/反色滤镜。
-- `metadata_cleaner`: **(New)** 剥离 EXIF 隐私信息，减小文件体积。
+```bash
+pip install -e .
+```
 
-## 📝 命名模板占位符
-- `{filename}`: 原始文件名（不含扩展名）
-- `{row}` / `{col}`: 当前行号/列号 (1开始)
-- `{index}`: 全局序号 (01开始)
-- `{w}`: 处理后图片的宽度(px)
-- `{h}`: 处理后图片的高度(px)
-- `{ext}`: 文件后缀
-- `{anchor}`: 对齐位置（如 TL, BR, center）
-- `{text}`: 水印文字内容
-- `{quality}`: 导出质量参数
+### GUI Mode
 
-## 🛠 开发扩展
-本项目支持极简的插件开发。只需继承 `BaseProcessor` 并实现逻辑，即可自动获得 CLI 支持与 GUI 自动渲染面板。详情请参阅 [DEVELOPER.md](./DEVELOPER.md)。
+```bash
+python -m image_splitter.gui
+# or
+image-splitter-gui
+```
+
+### CLI Mode
+
+```bash
+# Split test.png into 3x3 grid with 8 parallel processes
+python -m image_splitter.cli test.png -r 3 -c 3 -o ./output -j 8
+```
+
+### Script Mode
+
+```bash
+# Execute script file
+python -m image_splitter.cli input.png -s script.txt
+
+# Chain operations
+python -m image_splitter.cli input.png --chain "resizer(width=0.5)|grid_splitter(rows=2,cols=2)"
+```
+
+## Available Processors
+
+| Processor | Description |
+|-----------|-------------|
+| `grid_splitter` | Split image into uniform grid (rows x cols) |
+| `custom_splitter` | Custom coordinate-based splitting |
+| `resizer` | Proportional image scaling |
+| `canvas_adjuster` | Canvas padding, cropping, background fill |
+| `format_converter` | WebP/JPEG/PNG format conversion with quality control |
+| `geometry` | Rotation (90/180/270) and flip operations |
+| `filters` | Grayscale and invert filters |
+| `color_adjuster` | Brightness, contrast, sharpness, saturation tuning |
+| `metadata_cleaner` | Strip EXIF/GPS privacy data |
+| `text_watermark` | Add semi-transparent text watermark |
+
+## Template Placeholders
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{filename}` | Original filename without extension |
+| `{row}` / `{col}` | Current row/column number (1-based) |
+| `{index}` | Global sequence number (01-based, zero-padded) |
+| `{w}` | Processed image width in pixels |
+| `{h}` | Processed image height in pixels |
+| `{ext}` | File extension |
+| `{anchor}` | Anchor position (TL, TR, BL, BR, C) |
+| `{text}` | Watermark text content |
+| `{quality}` | Export quality parameter |
+
+## Configuration
+
+Settings are persisted to `~/.image_splitter/settings.json`. You can customize:
+
+```json
+{
+    "output_dir": "./output",
+    "default_processor": "grid_splitter",
+    "template": "{filename}_{index}",
+    "max_workers": 0,
+    "default_rows": 3,
+    "default_cols": 3
+}
+```
+
+## Keybindings
+
+Default keybindings are stored in `~/.image_splitter/keymap.json`:
+
+```json
+{
+    "global": {
+        "<Control-o>": "select_files",
+        "<Control-Enter>": "run_batch",
+        "<Delete>": "remove_selected"
+    }
+}
+```
+
+## Development
+
+This project supports plugin development. Simply inherit from `BaseProcessor` and implement your logic to automatically get CLI support and GUI panel generation.
+
+See [DEVELOPER.md](./DEVELOPER.md) for details.
+
+## Architecture
+
+```
+image_splitter/
+├── cli.py                    # CLI entry point
+├── gui.py                    # GUI entry point  
+├── core.py                  # Core processing pipeline
+├── settings.py              # User settings persistence
+├── keymap.py               # Keybinding system
+├── script_engine.py         # Batch scripting engine
+├── logging_config.py       # Logging configuration
+├── pyproject.toml         # Package configuration
+├── engine/
+│   ├── base.py             # BaseProcessor/BaseConfig abstract classes
+│   ├── registry.py         # Processor registration center
+│   ├── dispatcher.py       # Command dispatcher for chaining
+│   └── config_coercion.py  # Parameter type coercion
+├── processors/             # Processor plugins (10 total)
+├── models.py               # Configuration dataclasses
+└── tests/                 # Test suite (69 tests)
+```
+
+## Requirements
+
+- Python 3.10+
+- Pillow 10.2.0+
+
+## License
+
+MIT

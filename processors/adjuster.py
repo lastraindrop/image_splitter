@@ -8,9 +8,9 @@ from image_splitter.models import AdjustConfig
 
 
 class CanvasAdjuster(BaseProcessor):
-    """画布调整处理器。
+    """Canvas adjuster processor.
     
-    支持调整画布边界，包括扩充（Padding）或裁剪（Cropping）。
+    Adjusts canvas boundary by padding or cropping.
     """
 
     @property
@@ -23,7 +23,7 @@ class CanvasAdjuster(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "画布调整 (Canvas Adjuster)"
+        return "Canvas Adjuster"
 
     @property
     def category(self) -> str:
@@ -31,20 +31,20 @@ class CanvasAdjuster(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "调整画布的边界，支持扩充或裁剪 (Canvas Adjuster)。"
+        return "Adjust canvas boundary by padding or cropping."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "width", "label": "目标宽度 (比例或像素)", "type": "str", "default": "1.0"},
-            {"name": "height", "label": "目标高度 (比例或像素)", "type": "str", "default": "1.0"},
+            {"name": "width", "label": "Target Width (ratio or px)", "type": "str", "default": "1.0"},
+            {"name": "height", "label": "Target Height (ratio or px)", "type": "str", "default": "1.0"},
             {
                 "name": "anchor", 
-                "label": "锚点", 
+                "label": "Anchor", 
                 "type": "enum", 
                 "default": "center", 
                 "options": ["center", "top-left", "top-right", "bottom-left", "bottom-right"]
             },
-            {"name": "bg_color", "label": "背景色 RGBA", "type": "list", "default": [255, 255, 255, 255]}
+            {"name": "bg_color", "label": "Background RGBA", "type": "list", "default": [255, 255, 255, 255]}
         ]
 
     def process(
@@ -52,13 +52,13 @@ class CanvasAdjuster(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行画布调整。"""
+        """Perform canvas adjustment."""
         width = config.get("width", 1.0)
         height = config.get("height", 1.0)
         anchor = config.get("anchor", "center")
         bg_color = tuple(config.get("bg_color", [255, 255, 255, 255]))
         
-        # 处理可能的字符串输入
+        # Handle possible string input
         if isinstance(width, str):
             width = float(width) if '.' in width else int(width)
         if isinstance(height, str):

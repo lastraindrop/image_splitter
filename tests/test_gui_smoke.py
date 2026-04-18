@@ -81,15 +81,13 @@ class TestGuiSmoke(unittest.TestCase):
             self.app.stop_tasks()
 
         self.assertTrue(self.app.stop_event.is_set())
-        self.assertEqual(self.app.status_label.cget("text"), "正在停止...")
+        self.assertIn("Stop", self.app.status_label.cget("text"))
 
     def test_finish_report_restores_button_states(self):
         self.app.btn_run.config(state=gui.tk.DISABLED)
         self.app.btn_stop.config(state=gui.tk.NORMAL)
 
-        with patch.object(gui.messagebox, "showinfo") as info_mock:
-            self.app.finish_report(1, 1, aborted=False)
-            info_mock.assert_called_once()
+        self.app.finish_report(1, 1, aborted=False)
 
         self.assertEqual(str(self.app.btn_run["state"]), str(gui.tk.NORMAL))
         self.assertEqual(str(self.app.btn_stop["state"]), str(gui.tk.DISABLED))

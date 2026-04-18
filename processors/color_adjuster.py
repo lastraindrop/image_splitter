@@ -8,9 +8,9 @@ from image_splitter.models import ColorConfig
 
 
 class ImageColorAdjuster(BaseProcessor):
-    """色彩与图像质量调节器。
+    """Color adjust processor.
     
-    支持调节亮度、对比度、锐度及颜色饱和度。
+    Adjusts brightness, contrast, sharpness and color saturation.
     """
 
     @property
@@ -23,7 +23,7 @@ class ImageColorAdjuster(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "色彩调节 (Color Tuning)"
+        return "Color Tuning"
 
     @property
     def category(self) -> str:
@@ -31,14 +31,14 @@ class ImageColorAdjuster(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "精细调节图像的亮度、对比度、锐度及饱和度。1.0 即为原图 (Color Tuning)。"
+        return "Fine-tune brightness, contrast, sharpness and saturation. 1.0 is original."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "brightness", "label": "亮度", "type": "float", "default": 1.0},
-            {"name": "contrast", "label": "对比度", "type": "float", "default": 1.0},
-            {"name": "sharpness", "label": "锐度", "type": "float", "default": 1.0},
-            {"name": "color", "label": "颜色/饱和度", "type": "float", "default": 1.0}
+            {"name": "brightness", "label": "Brightness", "type": "float", "default": 1.0},
+            {"name": "contrast", "label": "Contrast", "type": "float", "default": 1.0},
+            {"name": "sharpness", "label": "Sharpness", "type": "float", "default": 1.0},
+            {"name": "color", "label": "Color/Saturation", "type": "float", "default": 1.0}
         ]
 
     def process(
@@ -46,7 +46,7 @@ class ImageColorAdjuster(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行色彩增强处理。"""
+        """Perform color enhancement."""
         b = config.get("brightness", 1.0)
         c = config.get("contrast", 1.0)
         s = config.get("sharpness", 1.0)

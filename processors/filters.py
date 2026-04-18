@@ -8,9 +8,9 @@ from image_splitter.models import FilterConfig
 
 
 class SimpleFilterProcessor(BaseProcessor):
-    """轻量级效果滤镜。
+    """Simple filter processor.
     
-    支持极速的灰度化和反色处理。
+    Applies grayscale and invert filters.
     """
 
     @property
@@ -23,7 +23,7 @@ class SimpleFilterProcessor(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "效果滤镜 (Effects)"
+        return "Effects"
 
     @property
     def category(self) -> str:
@@ -31,12 +31,12 @@ class SimpleFilterProcessor(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "提供极速的像素级滤镜：灰度化或反色处理。"
+        return "Apply grayscale or invert filter."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "grayscale", "label": "灰度化", "type": "bool", "default": False},
-            {"name": "invert", "label": "反色/底片", "type": "bool", "default": False}
+            {"name": "grayscale", "label": "Grayscale", "type": "bool", "default": False},
+            {"name": "invert", "label": "Invert", "type": "bool", "default": False}
         ]
 
     def process(
@@ -44,7 +44,7 @@ class SimpleFilterProcessor(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行滤镜处理。"""
+        """Perform filter processing."""
         gs = config.get("grayscale", False)
         inv = config.get("invert", False)
 

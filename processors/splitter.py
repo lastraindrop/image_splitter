@@ -9,9 +9,9 @@ from image_splitter.models import SplitConfig
 
 
 class GridSplitter(BaseProcessor):
-    """网格切割处理器。
+    """Grid splitter processor.
     
-    将图像按照指定的行数和列数进行等分切割，支持边缘偏移。
+    Splits image into rows x cols grid with optional edge offsets.
     """
 
     @property
@@ -24,7 +24,7 @@ class GridSplitter(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "网格切割 (Grid Splitter)"
+        return "Grid Splitter"
 
     @property
     def category(self) -> str:
@@ -32,13 +32,13 @@ class GridSplitter(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "将图像按照指定的行数和列数进行等分切割，支持设置边缘偏移以排除边框 (Grid Splitter)。"
+        return "Split image into rows x cols grid with optional edge offsets to exclude borders."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "rows", "label": "行数", "type": "int", "default": 3},
-            {"name": "cols", "label": "列数", "type": "int", "default": 3},
-            {"name": "offsets", "label": "偏移 (L,T,R,B)", "type": "list", "default": [0, 0, 0, 0]}
+            {"name": "rows", "label": "Rows", "type": "int", "default": 3},
+            {"name": "cols", "label": "Cols", "type": "int", "default": 3},
+            {"name": "offsets", "label": "Offsets (L,T,R,B)", "type": "list", "default": [0, 0, 0, 0]}
         ]
 
     def process(
@@ -46,19 +46,19 @@ class GridSplitter(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行网格切割。"""
+        """Perform grid split."""
         rows = config.get("rows", 1)
         cols = config.get("cols", 1)
         offsets = config.get("offsets", [0, 0, 0, 0])
 
-        # 1. 应用偏移量
+        # 1. Apply offsets
         orig_w, orig_h = image.size
         l_off, t_off, r_off, b_off = offsets
         crop_box = (l_off, t_off, orig_w - r_off, orig_h - b_off)
         
         # 2. 预校验
         if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
-            raise ValueError(f"偏移量导致区域无效: {crop_box}")
+            raise ValueError(f"Offsets result in invalid region: {crop_box}")
             
         img = image.crop(crop_box)
         img_width, img_height = img.size

@@ -33,24 +33,20 @@ class TestGuiWorkflows(unittest.TestCase):
         self._temp_dir_obj.cleanup()
 
     def test_full_workflow_config_coercion_and_run(self):
-        """测试完整工作流: 载入文件 -> 切换处理器 -> 修改参数 -> 验证运行参数是否正确强转"""
-        # 1. 模拟载入文件
         with patch.object(gui.filedialog, "askopenfilenames", return_value=[str(self.img_path)]):
             self.app.select_files()
             
         self.assertEqual(len(self.app.current_files), 1)
         self.assertEqual(self.app.current_orig_size, (100, 100))
 
-        # 2. 模拟切换处理器到 Format Converter
-        target_processor_name = "格式转换 (Format Converter)"
-        # 验证该名称存在于下拉列表中
+        target_processor_name = "Format Converter"
         self.assertIn(target_processor_name, self.app.processor_combo["values"])
         
         self.app.active_processor_name.set(target_processor_name)
         self.app._on_processor_changed()
         
         # 验证工具提示是否已更新
-        self.assertIn("Format Converter", self.app.tool_tip_var.get())
+        self.assertIn("Export", self.app.tool_tip_var.get())
 
         # 3. 模拟修改参数
         self.assertIn("format", self.app.dynamic_vars)

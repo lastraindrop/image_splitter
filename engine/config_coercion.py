@@ -10,7 +10,7 @@ def _coerce_bool(value: Any) -> bool:
         return True
     if normalized in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(f"无法解析布尔值: {value}")
+    raise ValueError(f"Cannot parse bool: {value}")
 
 
 def _coerce_list(value: Any) -> List[Any]:
@@ -24,7 +24,7 @@ def _coerce_list(value: Any) -> List[Any]:
             return parsed
         if isinstance(parsed, tuple):
             return list(parsed)
-    raise ValueError(f"无法解析列表值: {value}")
+    raise ValueError(f"Cannot parse list: {value}")
 
 
 def _coerce_value(meta: Dict[str, Any], value: Any) -> Any:
@@ -42,7 +42,7 @@ def _coerce_value(meta: Dict[str, Any], value: Any) -> Any:
         normalized = str(value)
         options = meta.get("options") or []
         if options and normalized not in options:
-            raise ValueError(f"值 '{normalized}' 不在可选项中: {options}")
+            raise ValueError(f"Value '{normalized}' not in options: {options}")
         return normalized
 
     return str(value)
@@ -59,7 +59,7 @@ def coerce_processor_config(processor: Any, raw_config: Dict[str, Any]) -> Dict[
             coerced[name] = _coerce_value(meta, raw_value)
         except Exception as exc:
             label = meta.get("label", name)
-            raise ValueError(f"参数 '{label}' 格式不正确，需要 {meta.get('type', 'str')} 类型") from exc
+            raise ValueError(f"Parameter '{label}' requires {meta.get('type', 'str')}") from exc
 
     for key, value in raw_config.items():
         if key not in coerced:

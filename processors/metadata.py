@@ -8,9 +8,9 @@ from image_splitter.models import MetadataConfig
 
 
 class MetadataProcessor(BaseProcessor):
-    """元数据处理器。
+    """Metadata processor.
     
-    支持剥离隐私元数据（EXIF/GPS 等），并可选择保留 ICC 色彩配置文件。
+    Strips privacy metadata (EXIF/GPS) with optional ICC profile retention.
     """
 
     @property
@@ -23,7 +23,7 @@ class MetadataProcessor(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "元数据清理 (Metadata Cleaner)"
+        return "Metadata Cleaner"
 
     @property
     def category(self) -> str:
@@ -31,20 +31,20 @@ class MetadataProcessor(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "剥离图像中的隐私元数据（如 EXIF/GPS），显著减小体积 (Metadata Cleaner)。"
+        return "Strip privacy metadata (EXIF/GPS) to reduce file size."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "strip_all", "label": "剥离所有元数据", "type": "bool", "default": True},
-            {"name": "keep_icc", "label": "保留 ICC 配置文件", "type": "bool", "default": True}
+            {"name": "strip_all", "label": "Strip All Metadata", "type": "bool", "default": True},
+            {"name": "keep_icc", "label": "Keep ICC Profile", "type": "bool", "default": True}
         ]
 
     def process(
-        self, 
-        image: Image.Image, 
+        self,
+        image: Image.Image,
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行元数据清理。"""
+        """Perform metadata cleanup."""
         strip = config.get("strip_all", True)
         keep_icc = config.get("keep_icc", True)
 
@@ -52,10 +52,21 @@ class MetadataProcessor(BaseProcessor):
         if not strip:
             return [(image.copy(), context)]
 
-        # 创建纯净副本
+        # Save original palette (for P mode)
+        original_palette = None
+        if image.mode == "P":
+            original_palette = image.getpalette()
+            if original_palette:
+                original_palette = tuple(original_palette)
+
+        # Create clean copy
         clean_img = Image.new(image.mode, image.size)
         clean_img.paste(image)
-        
+
+        # Restore P mode palette
+        if original_palette and image.mode == "P":
+            clean_img.putpalette(original_palette)
+
         # 处理 ICC Profile
         icc = image.info.get("icc_profile")
         if keep_icc and icc:
@@ -77,7 +88,7 @@ class MetadataProcessor(BaseProcessor):
             x0, y0 = canvas_pos
             canvas.create_text(
                 x0 + 10, y0 + 10, 
-                text="🛡 隐私保护已开启", 
+                text="Privacy ON", 
                 fill=theme.SUCCESS, 
                 anchor="nw", 
                 font=("Arial", 8), 

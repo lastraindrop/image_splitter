@@ -1,91 +1,245 @@
-# 开发者指南 (Developer Guide)
+# Developer Guide
 
-本项目旨在提供一个高度模块化、具备工业级性能与安全性的通用图像处理框架。
+This document provides comprehensive guidance for developers who want to extend or contribute to Image Splitter Pro.
 
-## 核心架构 (Core Architecture)
+## Architecture Overview
 
-项目已全面迁移至 **Operator-Based (基于操作符)** 的设计哲学，对齐 Blender 等专业创作软件的设计逻辑。
+The project follows a **Operator-Based** design philosophy, aligned with professional tools like Blender. Every processing function is an independent operator that can be invoked via CLI, GUI, or script.
 
-```text
+```
 image_splitter/
-├── engine/           # 核心引擎 (通用调度与分发)
-│   ├── base.py       # 抽象基类 (BaseProcessor, BaseConfig)
-│   ├── registry.py   # 插件注册中心 (ProcessorRegistry)
-│   └── dispatcher.py # 命令解析与链式分发 (CommandDispatcher)
-├── processors/       # 处理插件集 (高度可扩展)
-│   ├── splitter.py   # 基础网格切割插件
-│   ├── custom_splitter.py # 自定义线切割插件
-│   ├── resizer.py    # 图片缩放插件
-│   └── adjuster.py   # 画布调整与填充插件
-├── core.py           # 任务流水线引擎 (与 Registry 深度绑定)
-├── models.py         # 参数校验模型 (Fail-Fast 准则)
-├── gui.py            # 动态 UI 平台 (基于强类型 Metadata 自动渲染)
-├── cli.py            # 高性能 CLI (支持路径自修复与并发)
-└── tests/            # 自动化测试套件
+├── engine/                 # Core engine (generic dispatch)
+│   ├── base.py           # Abstract base classes
+│   ├── registry.py       # Plugin registration center
+│   ├── dispatcher.py   # Command parsing and chaining
+│   └── config_coercion.py  # Parameter type coercion
+├── processors/           # Processor plugins (10 total)
+├── models.py             # Configuration dataclasses
+├── core.py              # Processing pipeline
+├── cli.py               # CLI entry point
+├── gui.py               # GUI entry point
+├── settings.py          # User settings persistence
+├── keymap.py           # Keybinding system
+├── script_engine.py     # Batch scripting engine
+├── tests/               # Test suite (69 tests)
+└── pyproject.toml      # Package configuration
 ```
 
-## 核心设计准则
+## Core Design Principles
 
-1. **一切皆操作符 (Operator Pattern)**：
-   - 每一个处理功能（如切割、缩放）都被抽象为一个 `Processor` 插件。
-   - 核心引擎通过 `Registry` 发现插件，并通过 `CommandDispatcher` 支持字符串形式的指令调用。
+### 1. Everything as Operators
 
-2. **UI 动态对齐 (Dynamic Metadata-Driven UI)**：
-   - 处理器通过 `get_ui_metadata()` 自描述所需参数。
-   - `gui.py` 根据元数据自动渲染输入控件，彻底消除了 UI 层的硬编码。
-   - 任何 Core 层的参数变动会自动同步至 UI，确保了**参数一致性**。
+Every processing function (splitting, resizing, etc.) is abstracted as a `Processor` plugin. The core engine discovers plugins through `Registry` and supports string-based command invocation through `CommandDispatcher`.
 
-3. **资源绝对安全**：
-   - 全线采用 `with Image.open(...)` 上下文管理。
-   - 裁切副本在处理完成后立即 `close()`，严格控制内存峰值。
+**Example:**
+```python
+# CLI
+python cli.py image.png --processor grid_splitter --set rows=3
 
-4. **Fail-Fast 校验准则**：
-   - 所有外部输入必须在执行 I/O 前完成类型、范围及物理合法性校验。
-   - 模型层 (`models.py`) 负责统一的参数结构化，核心层 (`core.py`) 负责业务逻辑校验。
+# Or chain
+python cli.py image.png --chain "resizer(width=0.5)|grid_splitter(rows=2)"
+```
 
-5. **代码风格与工程规范 (Google Python Style)**：
-   - 全线遵循 [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)。
-   - 核心函数必须配备完整的 Google Style Docstrings (Args/Returns/Raises)。
-   - 路径处理强制使用 `pathlib.Path` 以确保跨平台健壮性。
-   - 逻辑层禁止使用 `print()`，统一采用标准 `logging` 模块。
+### 2. Metadata-Driven UI
 
-## 扩展一个新功能
-1. 在 `processors/` 目录下新建 Python 脚本，继承 `BaseProcessor`。
-2. 实现 `process()` 核心逻辑和 `get_ui_metadata()` 参数定义。
-3. **重要 (强类型模型绑定)**: 必须在 `models.py` 中定义对应的 `dataclass` 配置模型，并在处理器的 `config_model` 属性中关联。
-4. **重要 (参数对齐协议)**: 在 `process()` 返回的 `context` 字典中，需包含该处理器的核心元数据（如 `anchor`, `text` 等），以支持用户在命名模板中动态引用。
-5. 系统核心 `register_all_processors()` 会自动扫描并完成加载。
-6. 运行 `python gui.py` 或 `cli.py` 即刻生效。
+Processors self-describe their required parameters via `get_ui_metadata()`. The GUI automatically renders input controls based on this metadata, eliminating hardcoded UI logic.
 
-## Context 注入协议与强类型校验 (Parameter Consistency)
-为了通过“动态对齐”解决外部变量命名冲突并确保 UI 交互的稳定性，规定：
-- **模型驱动 (Model-Driven)**: 所有处理器参数必须通过 `models.py` 中的模型进行预校验。
-- **coercion 机制**: 原始输入（CLI 字符串或 GUI 变量）必须通过 `coerce_processor_config` 进行物理类型转换，确保数据类型与 `config_model` 严格对齐。
-- **Context 注入**: 处理器必须将核心参数注入返回的 `context` 中，以支持命名模板。
-- **系统级变量**: `core.py` 默认提供 `{w}`, `{h}`, `{index}`, `{filename}` 变量。
+**Example processor metadata:**
+```python
+def get_ui_metadata(self) -> List[Dict[str, Any]]:
+    return [
+        {"name": "rows", "label": "Rows", "type": "int", "default": 3},
+        {"name": "cols", "label": "Cols", "type": "int", "default": 3},
+    ]
+```
 
-### 增量实践（V5.5 交付版）
+### 3. Resource Safety
 
-- **Pathlib 化**: 彻底解耦 `os.path`，核心逻辑不再依赖原始字符串路径。
-- **日志审计**: `core.py` 已接入标准 `logging` 架构。
-- **契约测试**: 强制执行 `test_parameter_contract.py`，确保所有插件的元数据与强制转换逻辑匹配。
+- All image operations use `with Image.open(...)` context management
+- Cropped copies are closed immediately after processing
+- Memory峰值 is strictly controlled
 
----
+### 4. Fail-Fast Validation
 
-## 路线图 (Roadmap)
+All external input must be validated for type, range, and physical validity before I/O operations. The model layer (`models.py`) handles parameter structuration, while core logic handles business validation.
 
-### 📈 已完成 (Done)
-- [x] **V4.0 架构升级**：完全解耦的插件自动发现机制。
-- [x] **功能库大扩容**：集成几何变换、滤镜、元数据清理、水印等 10+ 核心模块。
-- [x] **架构合规审计**：实现自动化插件协议检测（Compliance Testing）。
-- [x] **UI 交互增强**：自适应控件（勾选框/文本框）与强类型参数校验。
-- [x] **V5.5 工程重构**：全面适配 Google Python Style，引入 `pathlib` 与 `logging`。
+### 5. Code Style
 
-### 🗓 短期计划 (Short-Term Goals)
-- [ ] **静态类型审计 (Mypy)**：引入 `mypy` 进行全量类型扫描，消除 `Any` 类型遗留。
-- [ ] **可视化 Pipeline 编辑器**：允许用户在 GUI 中拖拽处理器卡片。
-- [ ] **宏录制与控制台 (Macro Console)**：实时显示操作指令并支持保存为脚本。
+- Follows [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
+- All core functions include complete Google-style Docstrings
+- Path handling uses `pathlib.Path` for cross-platform robustness
+- Logging uses the standard `logging` module instead of `print()`
 
-### 🚀 长期计划 (Long-Term Goals)
-- [ ] **分布式处理中台**：通过 RPC 协议将巨型渲染任务分发至多个节点。
-- [ ] **跨平台 WASM 发行版**：支持浏览器端直接进行高性能纯离线处理。
+## Creating a New Processor
+
+### Step 1: Create the Processor File
+
+Create a new Python file in the `processors/` directory:
+
+```python
+"""My custom processor module."""
+
+from typing import Any, Dict, List, Tuple
+from PIL import Image
+from image_splitter.engine.base import BaseProcessor
+
+
+class MyCustomProcessor(BaseProcessor):
+    """Description of what this processor does."""
+
+    @property
+    def name(self) -> str:
+        return "my_custom_processor"
+
+    @property
+    def display_name(self) -> str:
+        return "My Custom Processor"
+
+    @property
+    def category(self) -> str:
+        return "Edit"  # Options: Split, Transform, Edit, Filter, Export
+
+    @property
+    def tool_tip(self) -> str:
+        return "Description for tooltip."
+
+    @property
+    def config_model(self) -> type:
+        # Link to a config dataclass in models.py
+        from image_splitter.models import MyCustomConfig
+        return MyCustomConfig
+
+    def get_ui_metadata(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": "param1", "label": "Parameter 1", "type": "int", "default": 10},
+            {"name": "param2", "label": "Parameter 2", "type": "str", "default": "value"},
+        ]
+
+    def process(
+        self,
+        image: Image.Image,
+        config: Dict[str, Any]
+    ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        """Core processing logic."""
+        # Your logic here
+        result_image = image.copy()
+        
+        context = {
+            "param1": config.get("param1"),
+            "custom_key": "custom_value",  # For template substitution
+        }
+        
+        return [(result_image, context)]
+
+    def draw_preview(
+        self,
+        canvas,
+        thumb_size,
+        canvas_pos,
+        ratio,
+        props,
+        theme
+    ) -> None:
+        """Draw preview overlay on GUI canvas."""
+        pass
+```
+
+### Step 2: Define Configuration Model (Optional but Recommended)
+
+In `models.py`:
+
+```python
+@dataclass
+class MyCustomConfig:
+    param1: int = 10
+    param2: str = "value"
+
+    def __post_init__(self):
+        if self.param1 <= 0:
+            raise ValueError("param1 must be positive")
+```
+
+### Step 3: The Processor is Auto-Discovered
+
+Run `register_all_processors()` - it automatically scans and loads all processors in the `processors/` directory. No manual registration needed.
+
+## Parameter Consistency Protocol
+
+To ensure UI stability and prevent naming conflicts:
+
+1. **Model-Driven Validation**: All processor parameters must be pre-validated through models in `models.py`.
+
+2. **Coercion Mechanism**: Raw input (CLI strings or GUI variables) must be converted via `coerce_processor_config()` to ensure type alignment with `config_model`.
+
+3. **Context Injection**: Processors must inject core parameters into the returned `context` dictionary to support template substitution.
+
+4. **System Variables**: `core.py` provides `{w}`, `{h}`, `{index}`, `{filename}` by default.
+
+## Testing
+
+All new processors must pass the compliance tests:
+
+```bash
+# Run all tests
+python -m pytest tests/ -v
+
+# Run specific test file
+python -m pytest tests/test_operator_compliance.py -v
+
+# Run with coverage
+python -m pytest tests/ --cov=image_splitter
+```
+
+### Required Test Coverage
+
+- Processor smoke test (default configuration works)
+- Metadata completeness (name, label, type, default)
+- Parameter coercion (type conversion)
+- UI addressability (can be rendered in GUI)
+
+## Logging
+
+Use the logging module for all output:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+def process(self, image, config):
+    logger.debug("Processing with param1=%d", config.get("param1"))
+    # ...
+    logger.info("Processed %d tiles", len(results))
+```
+
+## Path Handling
+
+Always use `pathlib.Path` for cross-platform compatibility:
+
+```python
+from pathlib import Path
+
+def save_output(image: Image.Image, output_dir: str, filename: str) -> Path:
+    output_path = Path(output_dir) / filename
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(output_path)
+    return output_path
+```
+
+## Roadmap
+
+### Completed
+- [x] **V4.0 Architecture**: Fully decoupled plugin auto-discovery
+- [x] **Feature Library**: 10+ core modules (geometry, filters, watermark, etc.)
+- [x] **Compliance Testing**: Automated plugin protocol detection
+- [x] **UI Enhancement**: Adaptive controls with type validation
+- [x] **V5.5 Refactor**: Google Python Style compliance
+
+### Short-Term Goals
+- [ ] **Static Type Checking**: Integrate mypy for full type scanning
+- [ ] **Visual Pipeline Editor**: Drag-and-drop processor cards in GUI
+- [ ] **Macro Console**: Real-time operation recording
+
+### Long-Term Goals
+- [ ] **Distributed Processing**: RPC-based multi-node rendering
+- [ ] **WASM Edition**: Browser-based offline processing

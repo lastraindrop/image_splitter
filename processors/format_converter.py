@@ -8,9 +8,9 @@ from image_splitter.models import FormatConfig
 
 
 class ImageFormatConverter(BaseProcessor):
-    """图像格式转换器。
+    """Format converter processor.
     
-    支持 WebP, JPEG, PNG, BMP 格式转换及质量控制。
+    Converts image format (WebP, JPEG, PNG, BMP) with quality control.
     """
 
     @property
@@ -23,7 +23,7 @@ class ImageFormatConverter(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "格式转换 (Format Converter)"
+        return "Format Converter"
 
     @property
     def category(self) -> str:
@@ -31,18 +31,18 @@ class ImageFormatConverter(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "将图像导出为指定的格式，支持调节压缩质量 (Format Converter)。"
+        return "Export image to specified format with quality control."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
             {
                 "name": "format", 
-                "label": "目标格式", 
+                "label": "Target Format", 
                 "type": "enum", 
                 "default": "WebP", 
                 "options": ["WebP", "JPEG", "PNG", "BMP"]
             },
-            {"name": "quality", "label": "质量 (1-100)", "type": "int", "default": 80}
+            {"name": "quality", "label": "Quality (1-100)", "type": "int", "default": 80}
         ]
 
     def process(
@@ -50,7 +50,7 @@ class ImageFormatConverter(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行格式转换。"""
+        """Perform format conversion."""
         fmt = config.get("format", "WebP")
         quality = config.get("quality", 80)
             

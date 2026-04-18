@@ -4,13 +4,18 @@ from typing import Any, Dict, List, Tuple
 from PIL import Image
 
 from image_splitter.engine.base import BaseProcessor
+from image_splitter.models import ResizeConfig
 
 
 class ImageResizer(BaseProcessor):
-    """图像比例缩放处理器。
-    
-    使用 LANCZOS 算法按比例缩放图像的尺寸。
+    """Image resizer processor.
+
+    Scales image dimensions by ratio using LANCZOS algorithm.
     """
+
+    @property
+    def config_model(self) -> type:
+        return ResizeConfig
 
     @property
     def name(self) -> str:
@@ -18,7 +23,7 @@ class ImageResizer(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "比例缩放 (Image Resizer)"
+        return "Image Resizer"
 
     @property
     def category(self) -> str:
@@ -26,12 +31,12 @@ class ImageResizer(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "使用 LANCZOS 算法按比例缩放图像的尺寸 (Image Resizer)。"
+        return "Scale image dimensions by ratio using LANCZOS algorithm."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "width", "label": "宽度比例", "type": "float", "default": 1.0},
-            {"name": "height", "label": "高度比例", "type": "float", "default": 1.0}
+            {"name": "width", "label": "Width Ratio", "type": "float", "default": 1.0},
+            {"name": "height", "label": "Height Ratio", "type": "float", "default": 1.0}
         ]
 
     def process(
@@ -39,7 +44,7 @@ class ImageResizer(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行图像缩放。"""
+        """Perform image resize."""
         width = float(config.get("width", 1.0))
         height = float(config.get("height", 1.0))
 

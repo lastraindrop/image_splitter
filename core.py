@@ -101,7 +101,7 @@ def process_image(
 
         img_p = Path(image_path)
         if not img_p.exists():
-            return False, f"错误: 找不到文件 {image_path}"
+            return False, f"Error: File not found: {image_path}"
             
         processor = ProcessorRegistry.get(processor_name)
 
@@ -149,7 +149,7 @@ def process_image(
                 except KeyError as e:
                     if cell != orig_img:
                         cell.close()
-                    return False, f"命名模板包含无效的占位符: {e}"
+                    return False, f"Invalid template placeholder: {e}"
                 
                 # 提取文件名，防止路径穿越
                 safe_name = Path(name.replace('\\', '/')).name

@@ -8,9 +8,9 @@ from image_splitter.models import WatermarkConfig
 
 
 class TextWatermark(BaseProcessor):
-    """文字水印处理器。
+    """Text watermark processor.
     
-    支持在图像的五个指定位置添加半透明文字水印。
+    Adds semi-transparent text watermark at specified positions.
     """
 
     @property
@@ -23,7 +23,7 @@ class TextWatermark(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "文字水印 (Text Watermark)"
+        return "Text Watermark"
 
     @property
     def category(self) -> str:
@@ -31,16 +31,16 @@ class TextWatermark(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "在图像指定位置添加半透明文字水印 (Text Watermark)。"
+        return "Add semi-transparent text watermark at specified position."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "text", "label": "水印文字", "type": "str", "default": "PROTOTYPE"},
-            {"name": "size", "label": "字体大小", "type": "int", "default": 40},
-            {"name": "opacity", "label": "不透明度", "type": "int", "default": 128},
+            {"name": "text", "label": "Text", "type": "str", "default": "PROTOTYPE"},
+            {"name": "size", "label": "Font Size", "type": "int", "default": 40},
+            {"name": "opacity", "label": "Opacity", "type": "int", "default": 128},
             {
                 "name": "anchor", 
-                "label": "位置", 
+                "label": "Position", 
                 "type": "enum", 
                 "default": "BR", 
                 "options": ["TL", "TR", "BL", "BR", "C"]
@@ -52,7 +52,7 @@ class TextWatermark(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """添加文字水印。"""
+        """Add text watermark."""
         text = config.get("text", "")
         size = int(config.get("size", 40))
         opacity = int(config.get("opacity", 128))

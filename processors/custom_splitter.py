@@ -9,9 +9,9 @@ from image_splitter.models import CustomSplitConfig
 
 
 class CustomLineSplitter(BaseProcessor):
-    """基于自定义坐标线的切割处理器。
+    """Custom line splitter processor.
     
-    允许在指定像素坐标处添加横向或纵向切割线。
+    Splits image using custom horizontal or vertical cut lines at specified pixel positions.
     """
 
     @property
@@ -24,7 +24,7 @@ class CustomLineSplitter(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "比例切割 (Custom Lines)"
+        return "Custom Lines"
 
     @property
     def category(self) -> str:
@@ -32,12 +32,12 @@ class CustomLineSplitter(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "在指定像素坐标处添加横向或纵向切割线 (Custom Lines)。"
+        return "Add horizontal or vertical cut lines at specified pixel positions."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "h_lines", "label": "横向切割线", "type": "list", "default": [50]},
-            {"name": "v_lines", "label": "纵向切割线", "type": "list", "default": [50]}
+            {"name": "h_lines", "label": "Horizontal Lines", "type": "list", "default": [50]},
+            {"name": "v_lines", "label": "Vertical Lines", "type": "list", "default": [50]}
         ]
 
     def process(
@@ -45,12 +45,12 @@ class CustomLineSplitter(BaseProcessor):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行自定义线切割。"""
+        """Perform custom line split."""
         h_lines = config.get("h_lines", [])
         v_lines = config.get("v_lines", [])
 
         w, h = image.size
-        # 生成边界点并去重排序
+        # Generate boundary points and dedupe
         y_points = sorted(list(set([0, h] + [y for y in h_lines if 0 < y < h])))
         x_points = sorted(list(set([0, w] + [x for x in v_lines if 0 < x < w])))
         

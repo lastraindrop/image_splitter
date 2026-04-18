@@ -23,7 +23,7 @@ class GeometryProcessor(BaseProcessor):
 
     @property
     def display_name(self) -> str:
-        return "几何变换 (Rotate & Flip)"
+        return "Rotate & Flip"
 
     @property
     def category(self) -> str:
@@ -31,27 +31,31 @@ class GeometryProcessor(BaseProcessor):
 
     @property
     def tool_tip(self) -> str:
-        return "对图像执行旋转或轴向翻转 (Rotate & Flip)。"
+        return "Rotate or flip image horizontally or vertically."
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
         return [
-            {"name": "rotate", "label": "旋转角度", "type": "int", "default": 0},
-            {"name": "flip_h", "label": "水平翻转", "type": "bool", "default": False},
-            {"name": "flip_v", "label": "垂直翻转", "type": "bool", "default": False}
+            {"name": "rotate", "label": "Rotate", "type": "enum", "default": "0", "options": ["0", "90", "180", "270"]},
+            {"name": "flip_h", "label": "Flip Horizontal", "type": "bool", "default": False},
+            {"name": "flip_v", "label": "Flip Vertical", "type": "bool", "default": False}
         ]
 
     def process(
-        self, 
-        image: Image.Image, 
+        self,
+        image: Image.Image,
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """执行几何变换。"""
+        """Perform geometry transform."""
         angle = int(config.get("rotate", 0))
         fh = config.get("flip_h", False)
         fv = config.get("flip_v", False)
 
+        # Validate angle
+        if angle not in (0, 90, 180, 270, 360):
+            raise ValueError(f"Unsupported rotation angle: {angle}. Only 0/90/180/270 degrees supported.")
+
         img = image.copy()
-        
+
         # 旋转
         if angle == 90:
             img = img.transpose(Image.ROTATE_90)

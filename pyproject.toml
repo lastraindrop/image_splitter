@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-splitter"
+version = "0.5.0"
+description = "A lightweight, highly modular image processing framework with Blender-like operator philosophy"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "Image Splitter Team", email = "example@example.com"}
+]
+keywords = ["image", "processing", "splitter", "batch", "pipeline", "blender"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics",
+]
+
+dependencies = [
+    "Pillow>=10.2.0,<12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-xdist>=3.0.0",
+]
+
+gui = []
+
+[project.scripts]
+image-splitter = "image_splitter.cli:main"
+image-splitter-gui = "image_splitter.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/example/image-splitter"
+Repository = "https://github.com/example/image-splitter"
+Issues = "https://github.com/example/image-splitter/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["image_splitter*"]
+exclude = ["tests*", "tmp_cli*", "test_run*", "output*", "batch_output*"]
+
+[tool.setuptools.package-data]
+image_splitter = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["image_splitter"]
+omit = ["tests/*", "tmp_cli/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]

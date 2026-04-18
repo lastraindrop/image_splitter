@@ -16,6 +16,9 @@ import glob
 from concurrent.futures import ProcessPoolExecutor
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
+from image_splitter.engine.config_coercion import coerce_processor_config
+from image_splitter import settings
+from image_splitter import script_engine
 
 
 def _positive_int(value: str) -> int:
@@ -35,27 +38,45 @@ def _parse_set_option(raw: str):
     return key, value
 
 def main():
+    # 加载设置
+    loaded_settings = settings.load_settings()
+
     parser = argparse.ArgumentParser(description="通用图像处理工具 (CLI 版)")
-    
+
     # 核心参数
     parser.add_argument("input", help="输入文件、目录或通配符路径 (如: ./pics/*.png)")
-    parser.add_argument("-o", "--output", default="./output", help="输出目录 (默认: ./output)")
-    parser.add_argument("-p", "--processor", default="grid_splitter", help="处理器名称 (默认: grid_splitter)")
+    parser.add_argument("-o", "--output",
+                      default=loaded_settings.get("output_dir", "./output"),
+                      help="输出目录 (默认: 从设置读取或 ./output)")
+    parser.add_argument("-p", "--processor",
+                      default=loaded_settings.get("default_processor", "grid_splitter"),
+                      help="处理器名称 (默认: 从设置读取或 grid_splitter)")
     parser.add_argument("--set", dest="set_items", action="append", default=[], type=_parse_set_option,
                         help="处理器参数，格式 key=value，可重复传入")
-    
+
     # 网格切割兼容参数 (保留原有体验)
-    parser.add_argument("-r", "--rows", type=_positive_int, help="网格切割的行数")
-    parser.add_argument("-c", "--cols", type=_positive_int, help="网格切割列数")
-    
+    default_rows = loaded_settings.get("default_rows", 3)
+    default_cols = loaded_settings.get("default_cols", 3)
+    parser.add_argument("-r", "--rows", type=_positive_int, help=f"网格切割的行数 (默认: {default_rows})")
+    parser.add_argument("-c", "--cols", type=_positive_int, help=f"网格切割列数 (默认: {default_cols})")
+
     # 高级参数
-    parser.add_argument("--offset", type=int, nargs=4, default=[0, 0, 0, 0], 
+    parser.add_argument("--offset", type=int, nargs=4, default=[0, 0, 0, 0],
                         help="边缘偏移量: 左 上 右 下 (像素)")
-    parser.add_argument("-t", "--template", default="{filename}_{index}", 
-                        help="输出文件名模板 (默认: {filename}_{index})")
-    parser.add_argument("-j", "--jobs", type=_positive_int, default=multiprocessing.cpu_count(),
-                        help="并行进程数 (默认: CPU 核心数)")
+    parser.add_argument("-t", "--template",
+                      default=loaded_settings.get("template", "{filename}_{index}"),
+                      help="输出文件名模板 (默认: 从设置读取)")
+    max_workers = loaded_settings.get("max_workers", 0)
+    parser.add_argument("-j", "--jobs", type=_positive_int,
+                      default=max_workers if max_workers > 0 else multiprocessing.cpu_count(),
+                      help=f"并行进程数 (默认: CPU 核心数)")
     parser.add_argument("--recursive", action="store_true", help="是否递归搜索子目录")
+
+    # 脚本参数
+    parser.add_argument("-s", "--script", metavar="FILE",
+                      help="脚本文件路径")
+    parser.add_argument("--chain", metavar="SPEC",
+                      help="链式操作 spec，如 'resizer(width=0.5)|grid_splitter(rows=2,cols=2)'")
 
     args = parser.parse_args()
 
@@ -68,6 +89,19 @@ def main():
         available = ", ".join([p.name for p in ProcessorRegistry.list_all()])
         print(f"[INFO] 可用处理器: {available}")
         sys.exit(1)
+
+    # 脚本/链式处理模式
+    if args.script:
+        engine = script_engine.ScriptEngine()
+        result = engine.batch_script(args.script, [str(f) for f in [Path(args.input)]], str(output_dir))
+        print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
+        sys.exit(0 if result.success else 1)
+
+    if args.chain:
+        engine = script_engine.ScriptEngine()
+        result = engine.chain([str(f) for f in [Path(args.input)]], args.chain, str(output_dir))
+        print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
+        sys.exit(0 if result.success else 1)
 
     # 1. 环境检查与输入解析
     input_files = []
@@ -125,6 +159,15 @@ def main():
 
     config["output_dir"] = str(output_dir)
     config["template"] = args.template
+
+    # BUG-06 修复: 对 --set 参数进行类型强制转换
+    raw_config = config.copy()
+    try:
+        coerced_config = coerce_processor_config(processor, raw_config)
+        config = coerced_config
+    except ValueError as e:
+        print(f"[FAIL] 参数配置错误: {e}")
+        sys.exit(1)
 
     if args.processor == "grid_splitter":
         if "rows" not in config:

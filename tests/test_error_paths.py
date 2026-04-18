@@ -30,7 +30,7 @@ class TestErrorPaths(unittest.TestCase):
             "output_dir": str(self.output_dir),
         })
         self.assertFalse(success)
-        self.assertIn("找不到文件", msg)
+        self.assertIn("File not found", msg)
 
     def test_invalid_template_placeholder_returns_fail(self):
         success, msg = process_image(str(self.img_path), "grid_splitter", {
@@ -40,7 +40,7 @@ class TestErrorPaths(unittest.TestCase):
             "template": "{filename}_{not_exists}",
         })
         self.assertFalse(success)
-        self.assertIn("命名模板包含无效的占位符", msg)
+        self.assertIn("Invalid template placeholder", msg)
 
     def test_invalid_enum_value_returns_fail(self):
         success, msg = process_image(str(self.img_path), "format_converter", {
@@ -49,7 +49,7 @@ class TestErrorPaths(unittest.TestCase):
             "output_dir": str(self.output_dir),
         })
         self.assertFalse(success)
-        self.assertIn("参数 '目标格式' 格式不正确", msg)
+        self.assertIn("requires enum", msg)
 
     def test_invalid_list_value_returns_fail(self):
         success, msg = process_image(str(self.img_path), "custom_splitter", {
@@ -58,7 +58,7 @@ class TestErrorPaths(unittest.TestCase):
             "output_dir": str(self.output_dir),
         })
         self.assertFalse(success)
-        self.assertIn("参数 '横向切割线' 格式不正确", msg)
+        self.assertIn("requires list", msg)
 
 
 if __name__ == "__main__":
