@@ -1,7 +1,7 @@
 import unittest
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from PIL import Image
 
 try:
@@ -45,16 +45,16 @@ class TestGuiWorkflows(unittest.TestCase):
         self.app.active_processor_name.set(target_processor_name)
         self.app._on_processor_changed()
         
-        # 验证工具提示是否已更新
+        # Verify that the tooltip has been updated
         self.assertIn("Export", self.app.tool_tip_var.get())
 
-        # 3. 模拟修改参数
+        # 3. Simulate modifying parameters
         self.assertIn("format", self.app.dynamic_vars)
         self.assertIn("quality", self.app.dynamic_vars)
         self.app.dynamic_vars["format"].set("JPEG")
-        self.app.dynamic_vars["quality"].set("95") # 字符串类型输入
+        self.app.dynamic_vars["quality"].set("95") # String type input
 
-        # 4. 模拟运行并拦截 threading.Thread 验证传给工作线程的参数
+        # 4. Simulate running and intercept threading.Thread to verify parameters passed to the worker thread
         with patch.object(gui.filedialog, "askdirectory", return_value=str(self.output_dir)):
             with patch('threading.Thread') as mock_thread:
                 self.app.run_batch()
@@ -70,9 +70,9 @@ class TestGuiWorkflows(unittest.TestCase):
                 self.assertEqual(p_name, "format_converter")
                 self.assertEqual(out_dir, str(self.output_dir))
                 
-                # 验证 coercion 是否生效
+                # Verify if coercion is effective
                 self.assertEqual(processed_config["format"], "JPEG")
-                self.assertEqual(processed_config["quality"], 95) # 应该是整数，不是字符串
+                self.assertEqual(processed_config["quality"], 95) # Should be an integer, not a string
                 self.assertIsInstance(processed_config["quality"], int)
 
 if __name__ == '__main__':

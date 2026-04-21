@@ -24,10 +24,11 @@ class TestDispatcher(unittest.TestCase):
 
     def test_execute_chain_mock(self):
         ProcessorRegistry.reset()
-        # 创建 100x100 图片
+        # Create 100x100 image
         img = Image.new("RGB", (100, 100))
-        # 链式调用: 先切成 2x2 (生成 50x50)，逻辑上分发器目前会返回所有结果图片
-        # 注意: 这里的 execute_chain 会返回一个 Image 列表
+        # Chain call: first split into 2x2 (generating 50x50), 
+        # logically the dispatcher currently returns all result images.
+        # Note: execute_chain here returns a list of Images.
         cmd = "grid_splitter(rows=2, cols=2)"
         results = CommandDispatcher.execute_chain(img, cmd)
         self.assertEqual(len(results), 4)

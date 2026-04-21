@@ -1,6 +1,5 @@
 # image_splitter/tests/test_custom_splitter.py
 import unittest
-import os
 import tempfile
 from PIL import Image
 from pathlib import Path
@@ -14,7 +13,7 @@ class TestCustomSplitter(unittest.TestCase):
         self.output_dir = self.test_dir / "output"
         self.output_dir.mkdir(exist_ok=True)
         
-        # 创建一个 100x100 的测试图
+        # Create a 100x100 test image
         self.img_path = self.test_dir / "test_100.png"
         Image.new("RGB", (100, 100), color="white").save(self.img_path)
 
@@ -22,8 +21,8 @@ class TestCustomSplitter(unittest.TestCase):
         self._temp_dir_obj.cleanup()
 
     def test_custom_split_simple(self):
-        """测试简单的十字交叉切割 (2x2)"""
-        # 在 50, 50 处各切一刀
+        """Test simple cross split (2x2)."""
+        # Cut once at 50 on each axis
         config = CustomSplitConfig(
             h_lines=[50], 
             v_lines=[50], 
@@ -34,19 +33,19 @@ class TestCustomSplitter(unittest.TestCase):
         success, msg = process_image(str(self.img_path), "custom_splitter", config)
         self.assertTrue(success, msg)
         
-        # 验证文件
+        # Verify files
         files = list(self.output_dir.glob("*.png"))
         self.assertEqual(len(files), 4)
         
-        # 验证左上角那块是否是 50x50
+        # Verify top-left block is 50x50
         with Image.open(self.output_dir / "test_100_1_1.png") as img:
             self.assertEqual(img.size, (50, 50))
 
     def test_custom_split_irregular(self):
-        """测试不规则坐标切割"""
-        # Y轴切割点: 20, 80 -> 生成区间 (0,20), (20,80), (80,100) -> 3行
-        # X轴切割点: 30 -> 生成区间 (0,30), (30,100) -> 2列
-        # 总计 3x2 = 6 块
+        """Test irregular coordinate split."""
+        # Y-axis cut points: 20, 80 -> intervals (0,20), (20,80), (80,100) -> 3 rows
+        # X-axis cut points: 30 -> intervals (0,30), (30,100) -> 2 cols
+        # Total 3x2 = 6 blocks
         config = CustomSplitConfig(
             h_lines=[20, 80],
             v_lines=[30],
@@ -60,28 +59,28 @@ class TestCustomSplitter(unittest.TestCase):
         self.assertEqual(len(files), 6)
 
     def test_custom_split_out_of_bounds(self):
-        """测试超出范围的线应被忽略"""
+        """Test out-of-bounds lines are ignored."""
         config = CustomSplitConfig(
-            h_lines=[150], # 超出 100
+            h_lines=[150], # Beyond 100
             v_lines=[50],
             output_dir=str(self.output_dir)
         )
         
         success, _ = process_image(str(self.img_path), "custom_splitter", config)
         self.assertTrue(success)
-        # 生成 1x2 = 2 块
+        # Generates 1x2 = 2 blocks
         files = list(self.output_dir.glob("*.png"))
         self.assertEqual(len(files), 2)
 
     def test_custom_split_negative_forbidden(self):
-        """测试负数线已被模型拦截"""
+        """Test negative lines are intercepted by the model."""
         with self.assertRaises(ValueError) as ctx:
             CustomSplitConfig(
                 h_lines=[-10],
                 v_lines=[50],
                 output_dir=str(self.output_dir)
             )
-        self.assertIn("非负整数", str(ctx.exception))
+        self.assertIn("non-negative integers", str(ctx.exception))
 
 if __name__ == '__main__':
     unittest.main()

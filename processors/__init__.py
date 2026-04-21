@@ -1,3 +1,4 @@
+"""Processor module for image splitting and enhancement."""
 # processors/__init__.py
 from .splitter import GridSplitter
 from .resizer import ImageResizer

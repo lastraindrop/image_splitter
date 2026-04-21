@@ -1,3 +1,4 @@
+"""Geometry transformation processor for image rotation and flipping."""
 # image_splitter/processors/geometry.py
 from typing import Any, Dict, List, Tuple
 
@@ -8,9 +9,9 @@ from image_splitter.models import GeometryConfig
 
 
 class GeometryProcessor(BaseProcessor):
-    """几何变换处理器。
+    """Geometry transformation processor.
     
-    支持旋转（90/180/270度）以及水平/垂直翻转。
+    Supports rotation (90/180/270 degrees) and horizontal/vertical flipping.
     """
 
     @property
@@ -56,23 +57,23 @@ class GeometryProcessor(BaseProcessor):
 
         img = image.copy()
 
-        # 旋转
+        # Rotation
+        # Rotation
         if angle == 90:
-            img = img.transpose(Image.ROTATE_90)
+            img = img.transpose(Image.Transpose.ROTATE_90)
         elif angle == 180:
-            img = img.transpose(Image.ROTATE_180)
+            img = img.transpose(Image.Transpose.ROTATE_180)
         elif angle == 270:
-            img = img.transpose(Image.ROTATE_270)
-        
-        # 翻转
-        if fh:
-            img = img.transpose(Image.FLIP_LEFT_RIGHT)
-        if fv:
-            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            img = img.transpose(Image.Transpose.ROTATE_270)
 
+        # Flipping
+        if fh:
+            img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        if fv:
+            img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         return [(img, {"action": "geometry", "rotate": angle})]
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
         try:
             def get_val(key):
                 v = props.get(key)

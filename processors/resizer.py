@@ -1,3 +1,4 @@
+"""Image resizer processor for scaling image dimensions by ratio."""
 # image_splitter/processors/resizer.py
 from typing import Any, Dict, List, Tuple
 
@@ -52,7 +53,7 @@ class ImageResizer(BaseProcessor):
         target_w = int(orig_w * width)
         target_h = int(orig_h * height)
         if target_w <= 0 or target_h <= 0:
-            raise ValueError("目标宽高必须大于 0")
+            raise ValueError("Target width and height must be greater than 0")
         
         new_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
         

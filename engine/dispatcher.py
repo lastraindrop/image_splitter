@@ -1,4 +1,5 @@
 # image_splitter/engine/dispatcher.py
+"""Command parsing and chained dispatching for operators."""
 import ast
 from PIL import Image
 from typing import Dict, Any, List, Tuple
@@ -6,7 +7,7 @@ from image_splitter.engine.registry import ProcessorRegistry
 
 class CommandDispatcher:
     """
-    Blender 式的命令解析与分发中心
+    Blender-style command parsing and dispatch center
     """
 
     @staticmethod
@@ -14,21 +15,21 @@ class CommandDispatcher:
         try:
             node = ast.parse(token, mode="eval").body
         except SyntaxError as exc:
-            raise ValueError(f"无效的命令语法: {token}") from exc
+            raise ValueError(f"Invalid command syntax: {token}") from exc
 
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
-            raise ValueError(f"无效的操作符语法: {token}")
+            raise ValueError(f"Invalid operator syntax: {token}")
         if node.args:
-            raise ValueError(f"当前仅支持关键字参数: {token}")
+            raise ValueError(f"Currently only keyword arguments are supported: {token}")
 
         props: Dict[str, Any] = {}
         for keyword in node.keywords:
             if keyword.arg is None:
-                raise ValueError(f"不支持参数展开语法: {token}")
+                raise ValueError(f"Argument unpacking syntax is not supported: {token}")
             try:
                 props[keyword.arg] = ast.literal_eval(keyword.value)
             except (ValueError, SyntaxError) as exc:
-                raise ValueError(f"参数 '{keyword.arg}' 的值无法解析: {token}") from exc
+                raise ValueError(f"Value of parameter '{keyword.arg}' cannot be parsed: {token}") from exc
 
         return node.func.id, props
 
@@ -52,22 +53,33 @@ class CommandDispatcher:
         ops = cls.parse_command(cmd_str)
         current_images = [image]
         
-        for op_name, props in ops:
-            processor = ProcessorRegistry.get(op_name)
-            
-            # 对参数进行类型清洗与默认值补全
-            from image_splitter.engine.config_coercion import coerce_processor_config
-            coerced_props = coerce_processor_config(processor, props)
-            
-            next_step_images = []
-            for img in current_images:
-                results = processor.process(img, coerced_props)
-                for res_img, _ in results:
-                    next_step_images.append(res_img)
+        try:
+            for op_name, props in ops:
+                processor = ProcessorRegistry.get(op_name)
                 
+                # Clean types and fill default values for parameters
+                from image_splitter.engine.config_coercion import coerce_processor_config
+                coerced_props = coerce_processor_config(processor, props)
+                
+                next_step_images = []
+                for img in current_images:
+                    try:
+                        results = processor.process(img, coerced_props)
+                        for res_img, _ in results:
+                            next_step_images.append(res_img)
+                    finally:
+                        # Close intermediate images, but never the original input image
+                        if img != image:
+                            img.close()
+                
+                current_images = next_step_images
+            return current_images
+        except Exception:
+            # If an error occurs, clean up any intermediate images we are currently holding
+            for img in current_images:
                 if img != image:
-                    img.close()
-            
-            current_images = next_step_images
-            
-        return current_images
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
+            raise

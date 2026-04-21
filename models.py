@@ -1,18 +1,19 @@
 # image_splitter/models.py
-from dataclasses import dataclass, field
-from typing import Any, List, Optional, Tuple
+"""Configuration models for image processors."""
+from dataclasses import dataclass
+from typing import Any, List, Tuple
 
 
 @dataclass
 class SplitConfig:
-    """网格切割配置模型。
+    """Grid splitting configuration model.
 
     Attributes:
-        rows: 切割行数。
-        cols: 切割列数。
-        output_dir: 结果输出目录。
-        template: 输出文件名模板。
-        offsets: 边缘偏移 (左, 上, 右, 下)。
+        rows: Number of rows to split.
+        cols: Number of columns to split.
+        output_dir: Output directory for results.
+        template: Output filename template.
+        offsets: Margin offsets (Left, Top, Right, Bottom).
     """
     rows: int
     cols: int
@@ -22,21 +23,21 @@ class SplitConfig:
 
     def __post_init__(self):
         if not isinstance(self.rows, int) or not isinstance(self.cols, int):
-            raise ValueError("行数和列数必须是整数")
+            raise ValueError("Rows and columns must be integers")
         if not isinstance(self.offsets, (tuple, list)) or len(self.offsets) != 4:
-            raise ValueError("偏移量必须为 4 个整数的元组或列表")
+            raise ValueError("Offsets must be a tuple or list of 4 integers")
         self.validate()
 
     def validate(self):
         if self.rows <= 0 or self.cols <= 0:
-            raise ValueError("行数和列数必须是正整数")
+            raise ValueError("Rows and columns must be positive integers")
         if any(o < 0 for o in self.offsets):
-            raise ValueError("偏移量不能为负数")
+            raise ValueError("Offsets cannot be negative")
 
 
 @dataclass
 class AdjustConfig:
-    """画布调整配置模型。"""
+    """Canvas adjustment configuration model."""
     width: Any
     height: Any
     output_dir: str
@@ -53,14 +54,14 @@ class AdjustConfig:
 
     def validate(self):
         if not isinstance(self.width, (int, float)) or not isinstance(self.height, (int, float)):
-            raise ValueError(f"目标宽高必须是数字 (Got {type(self.width)})")
+            raise ValueError(f"Target width and height must be numbers (Got {type(self.width)})")
         if self.width <= 0 or self.height <= 0:
-            raise ValueError("目标宽高必须大于 0")
+            raise ValueError("Target width and height must be greater than 0")
 
 
 @dataclass
 class CustomSplitConfig:
-    """自定义比例切割配置模型。"""
+    """Custom ratio splitting configuration model."""
     h_lines: List[int]
     v_lines: List[int]
     output_dir: str
@@ -71,14 +72,14 @@ class CustomSplitConfig:
 
     def validate(self):
         if not isinstance(self.h_lines, (list, tuple)) or not isinstance(self.v_lines, (list, tuple)):
-            raise ValueError("切割线必须是列表或元组格式")
+            raise ValueError("Split lines must be in list or tuple format")
         if any(not isinstance(x, int) or x < 0 for x in self.h_lines + self.v_lines):
-            raise ValueError("切割线坐标必须是非负整数")
+            raise ValueError("Split line coordinates must be non-negative integers")
 
 
 @dataclass
 class ColorConfig:
-    """色彩调节配置模型。"""
+    """Color adjustment configuration model."""
     brightness: float = 1.0
     contrast: float = 1.0
     sharpness: float = 1.0
@@ -87,21 +88,21 @@ class ColorConfig:
 
 @dataclass
 class FilterConfig:
-    """效果滤镜配置模型。"""
+    """Effect filter configuration model."""
     grayscale: bool = False
     invert: bool = False
 
 
 @dataclass
 class FormatConfig:
-    """格式转换配置模型。"""
+    """Format conversion configuration model."""
     format: str = "WebP"
     quality: int = 80
 
 
 @dataclass
 class ResizeConfig:
-    """图像缩放配置模型。"""
+    """Image resizing configuration model."""
     width: float = 1.0
     height: float = 1.0
 
@@ -110,12 +111,12 @@ class ResizeConfig:
 
     def validate(self):
         if self.width <= 0 or self.height <= 0:
-            raise ValueError("缩放比例必须大于 0")
+            raise ValueError("Resize ratio must be greater than 0")
 
 
 @dataclass
 class GeometryConfig:
-    """几何变换配置模型。"""
+    """Geometry transformation configuration model."""
     rotate: int = 0
     flip_h: bool = False
     flip_v: bool = False
@@ -123,14 +124,14 @@ class GeometryConfig:
 
 @dataclass
 class MetadataConfig:
-    """元数据清理配置模型。"""
+    """Metadata cleaning configuration model."""
     strip_all: bool = True
     keep_icc: bool = True
 
 
 @dataclass
 class WatermarkConfig:
-    """文字水印配置模型。"""
+    """Text watermark configuration model."""
     text: str = ""
     size: int = 40
     opacity: int = 128

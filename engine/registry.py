@@ -1,43 +1,42 @@
 # image_splitter/engine/registry.py
-from typing import Dict, Any, List
-
-_global_registry: "ProcessorRegistry" = None
+"""Centralized registry for image processors."""
+from typing import Dict, Any, List, Optional
 
 
 class ProcessorRegistry:
-    """集中式处理器注册中心 (支持实例化和全局单例模式)"""
+    """Centralized processor registry (supports instantiation and global singleton mode)"""
 
-    _processors: Dict[str, Any] = {}
+    _instance: Optional["ProcessorRegistry"] = None
 
     def __init__(self):
-        pass
+        self._processors: Dict[str, Any] = {}
 
     @classmethod
-    def get_global_registry(cls) -> "ProcessorRegistry":
-        """获取全局单例注册中心 (用于实例化调用场景)"""
-        global _global_registry
-        if _global_registry is None:
-            _global_registry = cls()
-        return _global_registry
+    def get_instance(cls) -> "ProcessorRegistry":
+        """Get the global singleton instance."""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     @classmethod
-    def register(cls, processor):
-        """注册一个处理器"""
-        cls._processors[processor.name] = processor
+    def register(cls, processor: Any) -> None:
+        """Register a processor."""
+        cls.get_instance()._processors[processor.name] = processor
 
     @classmethod
-    def get(cls, name: str):
-        """获取处理器"""
-        if name not in cls._processors:
-            raise ValueError(f"未找到处理器: {name}")
-        return cls._processors[name]
+    def get(cls, name: str) -> Any:
+        """Get a processor."""
+        registry = cls.get_instance()
+        if name not in registry._processors:
+            raise ValueError(f"Processor not found: {name}")
+        return registry._processors[name]
 
     @classmethod
-    def list_all(cls):
-        """列出所有已注册的处理器"""
-        return list(cls._processors.values())
+    def list_all(cls) -> List[Any]:
+        """List all registered processors."""
+        return list(cls.get_instance()._processors.values())
 
     @classmethod
-    def reset(cls):
-        """清空注册表"""
-        cls._processors.clear()
+    def reset(cls) -> None:
+        """Clear the registry."""
+        cls.get_instance()._processors.clear()

@@ -1,3 +1,4 @@
+"""Format converter processor for changing image file types and quality."""
 # image_splitter/processors/format_converter.py
 from typing import Any, Dict, List, Tuple
 

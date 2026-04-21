@@ -1,4 +1,5 @@
 # image_splitter/gui.py
+"""Graphical user interface for Image Splitter Pro."""
 import sys
 import os
 import logging

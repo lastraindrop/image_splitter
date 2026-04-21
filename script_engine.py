@@ -6,9 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from PIL import Image
 
-from image_splitter.core import process_image, batch_process_images, register_all_processors
+from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
-from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.dispatcher import CommandDispatcher
 
 
@@ -18,7 +17,7 @@ class ScriptResult:
     def __init__(self, success: bool, message: str, output_files: Optional[List[Path]] = None):
         self.success = success
         self.message = message
-        self.output_files = output_files or []
+        self.output_files: List[Path] = output_files or []
 
 
 class ScriptEngine:
@@ -53,7 +52,7 @@ class ScriptEngine:
             success, msg = process_image(path, operator, config)
             if success:
                 success_count += 1
-                # 收集输出文件
+                # Collect output files
                 out_dir = Path(output_dir)
                 output_files.extend(out_dir.glob("*"))
 
@@ -73,7 +72,6 @@ class ScriptEngine:
 
         Example: chain_spec = "resizer(width=0.5)|grid_splitter(rows=2,cols=2)"
         """
-        from image_splitter.engine.dispatcher import CommandDispatcher
 
         results = []
         current_images = []

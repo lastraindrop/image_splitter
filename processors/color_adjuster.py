@@ -1,3 +1,4 @@
+"""Color adjust processor for fine-tuning brightness, contrast, and saturation."""
 # image_splitter/processors/color_adjuster.py
 from typing import Any, Dict, List, Tuple
 

@@ -1,4 +1,5 @@
 # image_splitter/engine/base.py
+"""Base classes and interfaces for the image processing engine."""
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -6,51 +7,51 @@ from PIL import Image
 
 
 class BaseConfig(ABC):
-    """基础配置抽象基类。"""
+    """Base configuration abstract base class."""
     @abstractmethod
     def validate(self) -> None:
-        """校验配置合法性。
+        """Validate configuration validity.
 
         Raises:
-            ValueError: 当配置参数不合法时抛出。
+            ValueError: Raised when configuration parameters are invalid.
         """
         pass
 
 
 class BaseProcessor(ABC):
-    """图像处理器插件基类。
+    """Image processor plugin base class.
     
-    所有具体的处理器（如网格切割、缩放器）都必须继承此类并实现抽象方法。
+    All specific processors (e.g., grid splitters, resizers) must inherit from this class and implement the abstract methods.
     """
     
     @property
     @abstractmethod
     def name(self) -> str:
-        """处理器唯一标识名称（snake_case）。"""
+        """Unique identifier name for the processor (snake_case)."""
         pass
 
     @property
     @abstractmethod
     def display_name(self) -> str:
-        """GUI 界面显示的名称。"""
+        """Name displayed in the GUI interface."""
         pass
 
     @property
     def category(self) -> str:
-        """所属分类。
+        """Category it belongs to.
         
-        可选值: 'Split', 'Transform', 'Edit', 'Filter', 'Export'。
+        Optional values: 'Split', 'Transform', 'Edit', 'Filter', 'Export'.
         """
         return "Transform"
 
     @property
     def tool_tip(self) -> str:
-        """操作功能的简短提示说明。"""
+        """Short description or tooltip for the operation."""
         return ""
 
     @property
     def config_model(self) -> Optional[type]:
-        """该处理器对应的配置验证模型类（DataClass）。"""
+        """Configuration validation model class (DataClass) corresponding to this processor."""
         return None
 
     @abstractmethod
@@ -59,23 +60,23 @@ class BaseProcessor(ABC):
         image: Image.Image, 
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
-        """核心处理逻辑。
+        """Core processing logic.
 
         Args:
-            image: 输入的 PIL 图像对象。
-            config: 清洗并转换类型后的配置字典。
+            image: Input PIL image object.
+            config: Configuration dictionary after cleaning and type conversion.
 
         Returns:
-            处理结果列表。每个元素是一个元组 (Image, Context)，
-            Context 用于命名模板的占位符替换。
+            List of processing results. Each element is a tuple (Image, Context),
+            where Context is used for placeholder replacement in naming templates.
         """
         pass
 
     def get_ui_metadata(self) -> List[Dict[str, Any]]:
-        """定义 UI 自动生成所需的参数元数据。
+        """Define parameter metadata required for automatic UI generation.
 
         Returns:
-            参数定义列表。每个字典需包含 'name', 'label', 'type', 'default' 等字段。
+            List of parameter definitions. Each dictionary must contain fields like 'name', 'label', 'type', 'default' etc.
         """
         return []
 
@@ -88,14 +89,14 @@ class BaseProcessor(ABC):
         props: Dict[str, Any], 
         theme: Any
     ) -> None:
-        """在 GUI 画布上绘制预览辅助线或覆盖物。
+        """Draw preview auxiliary lines or overlays on the GUI canvas.
 
         Args:
-            canvas: tkinter.Canvas 对象。
-            thumb_size: 缩略图在画布上的实际尺寸 (w, h)。
-            canvas_pos: 缩略图左上角在画布上的坐标 (x, y)。
-            ratio: 原始图到缩略图的缩放比例。
-            props: 当前 UI 控件的变量字典。
-            theme: UI 主题配置对象。
+            canvas: tkinter.Canvas object.
+            thumb_size: Actual size of the thumbnail on the canvas (w, h).
+            canvas_pos: Coordinates of the thumbnail's top-left corner on the canvas (x, y).
+            ratio: Scaling ratio from the original image to the thumbnail.
+            props: Variable dictionary of current UI controls.
+            theme: UI theme configuration object.
         """
         pass

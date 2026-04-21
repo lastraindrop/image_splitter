@@ -1,4 +1,5 @@
 # image_splitter/core.py
+"""Core image processing pipeline and processor discovery."""
 import importlib
 import logging
 import pkgutil
@@ -12,19 +13,19 @@ from image_splitter.engine.base import BaseProcessor
 from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.registry import ProcessorRegistry
 
-# 初始化日志
+# Initialize logging
 logger = logging.getLogger(__name__)
 
 
 def _prepare_image_for_save(image: Image.Image, save_format: str) -> Image.Image:
-    """准备保存时的图像（处理透明度与格式转换）。
+    """Prepare image for saving (handles transparency and format conversion).
 
     Args:
-        image: 原始 PIL 图像对象。
-        save_format: 目标保存格式（如 'JPEG'）。
+        image: Original PIL image object.
+        save_format: Target save format (e.g., 'JPEG').
 
     Returns:
-        处理后的图像对象。如果是 JPEG 且包含透明通道，则会进行铺底处理。
+        Processed image object. If JPEG and contains transparency, it will be flattened.
     """
     if save_format != 'JPEG':
         return image
@@ -42,34 +43,34 @@ def _prepare_image_for_save(image: Image.Image, save_format: str) -> Image.Image
 
 
 def register_all_processors() -> None:
-    """自动化寻找并注册 processors 目录下的所有插件类。
+    """Automatically discover and register all processor plugin classes in the processors directory.
 
-    该函数会扫描 image_splitter.processors 包下的所有模块，
-    并实例化所有继承自 BaseProcessor 的非抽象类。
+    This function scans all modules under the image_splitter.processors package,
+    and instantiates all non-abstract classes that inherit from BaseProcessor.
     """
     import image_splitter.processors as processors
     pkg_path = Path(processors.__file__).parent
     
-    # 清空重置，确保无状态遗留
+    # Clear and reset to ensure no state residue
     ProcessorRegistry.reset()
     
-    # 遍历 processors 包下的所有模块
+    # Iterate through all modules in the processors package
     for _, modname, _ in pkgutil.walk_packages([str(pkg_path)], processors.__name__ + "."):
         try:
-            # 动态导入/重载模块
+            # Dynamically import/reload modules
             if modname in sys.modules:
                 module = importlib.reload(sys.modules[modname])
             else:
                 module = importlib.import_module(modname)
             
-            # 找到模块中定义的 BaseProcessor 的非抽象子类
+            # Find non-abstract subclasses of BaseProcessor defined in the module
             for attr in dir(module):
                 obj = getattr(module, attr)
                 if (isinstance(obj, type) and 
                     issubclass(obj, BaseProcessor) and 
                     obj is not BaseProcessor):
                     
-                    # 实例化并注册
+                    # Instantiate and register
                     try:
                         instance = obj()
                         ProcessorRegistry.register(instance)
@@ -84,18 +85,18 @@ def process_image(
     processor_name: str,
     config: Any
 ) -> Tuple[bool, str]:
-    """通用图像处理逻辑入口。
+    """Entry point for general image processing logic.
 
     Args:
-        image_path: 输入图像的路径。
-        processor_name: 已注册的处理器名称。
-        config: 处理配置，可以是字典或对应的 DataClass 实例。
+        image_path: Path to the input image.
+        processor_name: Registered processor name.
+        config: Processing configuration, can be a dict or a corresponding DataClass instance.
 
     Returns:
-        一个元组 (success, message)。success 表示是否处理成功，message 是结果描述。
+        A tuple of (success, message). success indicates if processing was successful, message is the result description.
     """
     try:
-        # 0. 自动注册检测
+        # 0. Auto-registration check
         if not ProcessorRegistry.list_all():
             register_all_processors()
 
@@ -105,7 +106,7 @@ def process_image(
             
         processor = ProcessorRegistry.get(processor_name)
 
-        # 1. 统一配置清洗与模型验证 (Fail-Fast)
+        # 1. Unified configuration coercion and model validation (Fail-Fast)
         raw_dict = config if isinstance(config, dict) else (config.__dict__ if hasattr(config, '__dict__') else {})
         config_dict = coerce_processor_config(processor, raw_dict)
         
@@ -116,10 +117,10 @@ def process_image(
             processor.config_model(**model_input)
 
         with Image.open(img_p) as orig_img:
-            # 2. 图像处理
+            # 2. Image processing
             processed_items = processor.process(orig_img, config_dict)
             
-            # 3. 输出策略解析
+            # 3. Output strategy parsing
             output_dir = Path(config_dict.get('output_dir', "./output"))
             template = config_dict.get('template', "{filename}_{index}")
                 
@@ -131,17 +132,17 @@ def process_image(
             
             count = 0
             for cell, context in processed_items:
-                # 4. 命名与保存
+                # 4. Naming and saving
                 base_ctx = {
                     "filename": base_name, 
                     "ext": ext.lstrip('.'),
-                    "index": str(count + 1).zfill(2),
+                    "index": f"{count + 1:02d}",
                     "w": cell.width,
                     "h": cell.height
                 }
                 base_ctx.update(context)
                 
-                # 允许处理器动态改变后缀
+                # Allow processor to dynamically change extension
                 curr_ext = f".{base_ctx['ext']}"
                 
                 try:
@@ -151,7 +152,7 @@ def process_image(
                         cell.close()
                     return False, f"Invalid template placeholder: {e}"
                 
-                # 提取文件名，防止路径穿越
+                # Extract filename to prevent path traversal
                 safe_name = Path(name.replace('\\', '/')).name
                 if not safe_name.lower().endswith(curr_ext.lower()):
                     safe_name += curr_ext
@@ -177,15 +178,15 @@ def process_image(
                         cell.close()
                 count += 1
                 
-        return True, f"成功完成 [{processor.display_name}] 任务，生成 {count} 张图至 {output_dir}"
+        return True, f"Successfully completed [{processor.display_name}] task, generated {count} image(s) to {output_dir}"
         
     except Exception as e:
         logger.exception("Error processing image %s", image_path)
-        return False, f"处理异常 ({type(e).__name__}): {str(e)}"
+        return False, f"Processing exception ({type(e).__name__}): {str(e)}"
 
 
 def split_image_core(image_path: str, config: Any) -> Tuple[bool, str]:
-    """网格切割的便捷调用入口。"""
+    """Convenience entry point for grid splitting."""
     return process_image(image_path, "grid_splitter", config)
 
 
@@ -194,15 +195,15 @@ def batch_process_images(
     processor_name: str,
     config: Any
 ) -> Generator[Tuple[str, bool, str], None, None]:
-    """批量处理图像。
+    """Process images in batches.
 
     Args:
-        input_paths: 图像路径列表。
-        processor_name: 处理器名称。
-        config: 配置对象。
+        input_paths: List of image paths.
+        processor_name: Processor name.
+        config: Configuration object.
 
     Yields:
-        (路径, 是否成功, 描述信息) 的元组。
+        A tuple of (path, success, description).
     """
     for path in input_paths:
         success, msg = process_image(path, processor_name, config)

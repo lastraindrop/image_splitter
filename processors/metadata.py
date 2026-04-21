@@ -1,5 +1,6 @@
+"""Metadata processor for cleaning privacy-sensitive EXIF/GPS information."""
 # image_splitter/processors/metadata.py
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 from PIL import Image
 
@@ -53,11 +54,11 @@ class MetadataProcessor(BaseProcessor):
             return [(image.copy(), context)]
 
         # Save original palette (for P mode)
-        original_palette = None
+        original_palette: Optional[List[int]] = None
         if image.mode == "P":
-            original_palette = image.getpalette()
-            if original_palette:
-                original_palette = tuple(original_palette)
+            palette = image.getpalette()
+            if palette:
+                original_palette = list(palette)
 
         # Create clean copy
         clean_img = Image.new(image.mode, image.size)
@@ -67,7 +68,7 @@ class MetadataProcessor(BaseProcessor):
         if original_palette and image.mode == "P":
             clean_img.putpalette(original_palette)
 
-        # 处理 ICC Profile
+        # Process ICC Profile
         icc = image.info.get("icc_profile")
         if keep_icc and icc:
             clean_img.info["icc_profile"] = icc
@@ -75,7 +76,7 @@ class MetadataProcessor(BaseProcessor):
 
         return [(clean_img, context)]
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
         try:
             def get_val(key):
                 v = props.get(key)

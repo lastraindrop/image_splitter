@@ -1,13 +1,13 @@
 import unittest
-import tempfile
-from pathlib import Path
-from PIL import Image
 
 try:
     import tkinter as tk
     from image_splitter import gui
+    _HAS_TK = True
 except ImportError:
     tk = None
+    gui = None  # type: ignore
+    _HAS_TK = False
 
 from image_splitter.core import register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
@@ -18,7 +18,7 @@ class MockTkVar:
     def get(self):
         return self._value
 
-@unittest.skipIf(tk is None, "Tkinter is not available")
+@unittest.skipIf(not _HAS_TK, "Tkinter is not available")
 class TestUIPreview(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -38,18 +38,18 @@ class TestUIPreview(unittest.TestCase):
             self.root.destroy()
 
     def test_all_processors_draw_preview(self):
-        """确保所有处理器的 draw_preview 在收到合法的 mock 参数时不会抛出异常"""
+        """Ensure that draw_preview of all processors does not raise exceptions when receiving valid mock parameters"""
         processors = ProcessorRegistry.list_all()
         for p in processors:
             with self.subTest(processor=p.name):
-                # 构造 mock 的 dynamic_vars
+                # Construct mock dynamic_vars
                 ui_meta = p.get_ui_metadata()
                 mock_props = {}
                 for m in ui_meta:
-                    # 使用我们自定义的 MockTkVar 模拟 Tkinter 的 StringVar/IntVar 等
+                    # Use our custom MockTkVar to simulate Tkinter's StringVar/IntVar, etc.
                     mock_props[m["name"]] = MockTkVar(m["default"])
                 
-                # 调用 draw_preview，预期不抛出异常
+                # Call draw_preview, expecting no exceptions
                 try:
                     p.draw_preview(
                         canvas=self.canvas,
@@ -60,10 +60,10 @@ class TestUIPreview(unittest.TestCase):
                         theme=self.theme
                     )
                 except Exception as e:
-                    self.fail(f"处理器 {p.name} 的 draw_preview 抛出异常: {e}")
+                    self.fail(f"draw_preview of processor {p.name} raised an exception: {e}")
 
     def test_draw_preview_graceful_failure(self):
-        """测试遇到脏数据（例如字符串无法被解析为列表）时，draw_preview 应静默捕获，不破坏 GUI 线程"""
+        """Test that draw_preview should silently capture dirty data (e.g., strings that cannot be parsed as lists) without breaking the GUI thread"""
         p = ProcessorRegistry.get("custom_splitter")
         
         mock_props = {
@@ -71,7 +71,7 @@ class TestUIPreview(unittest.TestCase):
             "v_lines": MockTkVar("NOT_A_LIST")
         }
         
-        # 这个调用内部会通过 try-except 忽略异常
+        # This call will ignore exceptions via try-except internally
         try:
             p.draw_preview(
                 canvas=self.canvas,
@@ -82,7 +82,7 @@ class TestUIPreview(unittest.TestCase):
                 theme=self.theme
             )
         except Exception as e:
-            self.fail(f"draw_preview 没有正确捕获无效输入的异常: {e}")
+            self.fail(f"draw_preview did not correctly capture exceptions from invalid input: {e}")
 
 if __name__ == '__main__':
     unittest.main()

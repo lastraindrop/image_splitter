@@ -1,6 +1,5 @@
 # image_splitter/tests/test_processors_expanded.py
 import unittest
-import os
 import tempfile
 from PIL import Image
 from pathlib import Path
@@ -9,12 +8,12 @@ from image_splitter.models import SplitConfig
 
 class TestProcessorsDeepDive(unittest.TestCase):
     """
-    针对各处理器的深度参数适配与逻辑分析 (规则 3)
+    Deep parameter adaptation and logical analysis for each processor (Rule 3)
     """
     
     @classmethod
     def setUpClass(cls):
-        # 确保所有插件已加载
+        # Ensure all plugins are loaded
         register_all_processors()
 
     def setUp(self):
@@ -23,7 +22,7 @@ class TestProcessorsDeepDive(unittest.TestCase):
         self.output_dir = self.test_dir / "output"
         self.output_dir.mkdir(exist_ok=True)
         
-        # 创建 100x100 半透明测试图
+        # Create a 100x100 semi-transparent test image
         self.rgba_path = self.test_dir / "test_rgba.png"
         Image.new("RGBA", (100, 100), color=(255, 0, 0, 100)).save(self.rgba_path)
 
@@ -31,7 +30,7 @@ class TestProcessorsDeepDive(unittest.TestCase):
         self._temp_dir_obj.cleanup()
 
     def test_grid_splitter_rounding_consistency(self):
-        """规则 3: 边界点分析 - 100像素除以3的四舍五入一致性 (M3)"""
+        """Rule 3: Boundary Point Analysis - Rounding consistency of 100 pixels divided by 3 (M3)"""
         config = SplitConfig(rows=1, cols=3, output_dir=str(self.output_dir))
         success, _ = process_image(str(self.rgba_path), "grid_splitter", config)
         self.assertTrue(success)
@@ -39,15 +38,15 @@ class TestProcessorsDeepDive(unittest.TestCase):
         tiles = sorted(self.output_dir.glob("*.png"))
         self.assertEqual(len(tiles), 3)
         
-        # 验证总宽度是否维持不变 (原图 100)
+        # Verify if the total width remains unchanged (original image 100)
         total_w = 0
         for t in tiles:
             with Image.open(t) as img:
                 total_w += img.width
-        self.assertEqual(total_w, 100, f"网格切割造成像素丢失或溢出: {total_w} != 100")
+        self.assertEqual(total_w, 100, f"Grid splitting caused pixel loss or overflow: {total_w} != 100")
 
     def test_watermark_positioning_and_opacity(self):
-        """规则 3: 适配情况 - 水印各象限定位与透明度叠加"""
+        """Rule 3: Adaptation Case - Watermark positioning in each quadrant and opacity overlay"""
         anchors = ["TL", "TR", "BL", "BR", "C"]
         for anchor in anchors:
             with self.subTest(anchor=anchor):
@@ -59,20 +58,20 @@ class TestProcessorsDeepDive(unittest.TestCase):
                     "template": "{filename}_{anchor}"
                 }
                 success, msg = process_image(str(self.rgba_path), "text_watermark", config)
-                self.assertTrue(success, f"水印处理失败 [Anchor: {anchor}]: {msg}")
+                self.assertTrue(success, f"Watermark processing failed [Anchor: {anchor}]: {msg}")
                 
-                # 验证生成的文件能够被加载 (模板中指定了后缀或让 process_image 自动添加)
+                # Verify that the generated file can be loaded (suffix specified in template or automatically added by process_image)
                 try:
                     out_file = next(self.output_dir.glob(f"*_{anchor}.png"))
                 except StopIteration:
-                    self.fail(f"未找到水印测试输出文件: *_{anchor}.png, 提示: {msg}, 目录内容: {list(self.output_dir.glob('*'))}")
+                    self.fail(f"Watermark test output file not found: *_{anchor}.png, Info: {msg}, Directory content: {list(self.output_dir.glob('*'))}")
                 
                 with Image.open(out_file) as img:
-                    self.assertEqual(img.mode, "RGBA", "水印叠加应保持 Alpha 通道")
+                    self.assertEqual(img.mode, "RGBA", "Watermark overlay should maintain the Alpha channel")
 
     def test_color_adjuster_scaling(self):
-        """规则 3: 运行流程 - 极端参数组合分析"""
-        # 测试 2倍对比度 + 0倍亮度 (全黑)
+        """Rule 3: Runtime Flow - Extreme parameter combination analysis"""
+        # Test 2x contrast + 0x brightness (all black)
         config = {
             "contrast": 2.0,
             "brightness": 0.0,
@@ -82,20 +81,20 @@ class TestProcessorsDeepDive(unittest.TestCase):
             "template": "{filename}_color_tuned"
         }
         success, msg = process_image(str(self.rgba_path), "color_adjuster", config)
-        self.assertTrue(success, f"色彩调节测试失败: {msg}")
+        self.assertTrue(success, f"Color adjustment test failed: {msg}")
         
         try:
             out_file = next(self.output_dir.glob("*_color_tuned.png"))
         except StopIteration:
-            self.fail(f"未找到色彩调节输出文件: {msg}, 目录内容: {list(self.output_dir.glob('*'))}")
+            self.fail(f"Color adjustment output file not found: {msg}, Directory content: {list(self.output_dir.glob('*'))}")
             
         with Image.open(out_file) as img:
             pixels = list(img.convert("RGB").getdata())
             is_all_black = all(p == (0, 0, 0) for p in pixels)
-            self.assertTrue(is_all_black, f"参数适配错误：亮度 0 应当产出全黑图像")
+            self.assertTrue(is_all_black, "Parameter adaptation error: brightness 0 should produce an all-black image")
 
     def test_format_converter_flattens_alpha_for_jpeg(self):
-        """带透明通道的图像导出为 JPEG 时应自动铺底，避免保存失败"""
+        """Images with alpha channel should be automatically flattened when exported to JPEG to avoid saving failure"""
         config = {
             "format": "JPEG",
             "quality": 90,
@@ -111,30 +110,30 @@ class TestProcessorsDeepDive(unittest.TestCase):
             self.assertEqual(img.mode, "RGB")
 
     def test_canvas_adjuster_mixed_inputs(self):
-        """规则 3: 参数组合 - float (比例) 与 int (绝对像素) 的适配"""
+        """Rule 3: Parameter Combination - Adaptation of float (ratio) and int (absolute pixels)"""
         test_cases = [
-            {"width": 150, "height": 150, "anchor": "center", "expected_size": (150, 150)}, # 绝对像素
-            {"width": 2.0, "height": 0.5, "anchor": "top-left", "expected_size": (200, 50)}, # 比例
+            {"width": 150, "height": 150, "anchor": "center", "expected_size": (150, 150)}, # Absolute pixels
+            {"width": 2.0, "height": 0.5, "anchor": "top-left", "expected_size": (200, 50)}, # Ratio
         ]
         
         for case in test_cases:
             with self.subTest(case=case):
-                # 清空输出
+                # Clear output
                 for f in self.output_dir.glob("*"): f.unlink()
                 
                 success, msg = process_image(str(self.rgba_path), "canvas_adjuster", {**case, "output_dir": str(self.output_dir), "template": "{filename}_adjusted"})
-                self.assertTrue(success, f"画布调整测试失败 [Case: {case}]: {msg}")
+                self.assertTrue(success, f"Canvas adjustment test failed [Case: {case}]: {msg}")
                 
                 try:
                     out_file = next(self.output_dir.glob("*_adjusted.png"))
                 except StopIteration:
-                    self.fail(f"未找到画布调整输出文件: {msg}, 目录内容: {list(self.output_dir.glob('*'))}")
+                    self.fail(f"Canvas adjustment output file not found: {msg}, Directory content: {list(self.output_dir.glob('*'))}")
                 
                 with Image.open(out_file) as img:
                     self.assertEqual(img.size, case["expected_size"])
 
     def test_large_grid_completes(self):
-        """规则 3: 运行完整流程 - 400块大规模切分压力测试"""
+        """Rule 3: Full Workflow Execution - 400-block large-scale splitting stress test"""
         img = Image.new("RGB", (400, 400), color="green")
         path = self.test_dir / "large.png"
         img.save(path)
@@ -146,7 +145,7 @@ class TestProcessorsDeepDive(unittest.TestCase):
         self.assertEqual(len(files), 400)
 
     def test_pixel_accuracy(self):
-        """规则 3: 关键点分析 - 验证处理后子图像素与原图完全一致"""
+        """Rule 3: Key Point Analysis - Verify that processed sub-image pixels are identical to the original image"""
         img = Image.new("RGB", (100, 100))
         for x in range(100):
             for y in range(100):
@@ -164,12 +163,12 @@ class TestProcessorsDeepDive(unittest.TestCase):
             self.assertEqual(tile.getpixel((49, 49)), (98, 98, 128))
 
     def test_zero_pixel_avoidance(self):
-        """规则 3: 处理极限情况 - 偏移量导致区域极小时的容错"""
-        # 原图 100x100, 偏移 (48, 48, 48, 48) -> 剩 4x4
-        # 切 5x5 -> 必会有 0px 情况
+        """Rule 3: Handling Extreme Cases - Tolerance when offsets lead to extremely small regions"""
+        # Original image 100x100, offset (48, 48, 48, 48) -> 4x4 remaining
+        # Split into 5x5 -> there will definitely be 0px cases
         config = SplitConfig(rows=5, cols=5, output_dir=str(self.output_dir), offsets=(48, 48, 48, 48))
         success, msg = process_image(str(self.rgba_path), "grid_splitter", config)
-        self.assertTrue(success, f"处理极小区域不应报错: {msg}")
+        self.assertTrue(success, f"Processing extremely small regions should not raise an error: {msg}")
         files = list(self.output_dir.glob("*"))
         self.assertGreater(len(files), 0)
 

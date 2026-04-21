@@ -1,3 +1,4 @@
+"""Grid splitter processor for dividing images into uniform tiles."""
 # image_splitter/processors/splitter.py
 import ast
 from typing import Any, Dict, List, Tuple
@@ -56,7 +57,7 @@ class GridSplitter(BaseProcessor):
         l_off, t_off, r_off, b_off = offsets
         crop_box = (l_off, t_off, orig_w - r_off, orig_h - b_off)
         
-        # 2. 预校验
+        # 2. Pre-validation
         if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
             raise ValueError(f"Offsets result in invalid region: {crop_box}")
             
@@ -86,7 +87,7 @@ class GridSplitter(BaseProcessor):
                 
         return results
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
         try:
             def get_val(key, default=0):
                 val = props.get(key).get().strip()

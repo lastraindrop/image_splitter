@@ -1,3 +1,4 @@
+"""Utility for coercing configuration types from raw input."""
 import ast
 from typing import Any, Dict, List
 

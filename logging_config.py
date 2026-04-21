@@ -1,5 +1,5 @@
 # image_splitter/logging_config.py
-"""统一日志配置模块"""
+"""Unified logging configuration module."""
 import logging
 import sys
 
@@ -12,12 +12,12 @@ def configure_logging(
     format_string: str = DEFAULT_FORMAT,
     date_format: str = DEFAULT_DATE_FORMAT,
 ) -> None:
-    """配置全局日志系统。
+    """Configure global logging system.
 
     Args:
-        level: 日志级别，可选值 DEBUG/INFO/WARNING/ERROR/CRITICAL
-        format_string: 日志格式字符串
-        date_format: 日期时间格式
+        level: Log level, optional values DEBUG/INFO/WARNING/ERROR/CRITICAL
+        format_string: Log format string
+        date_format: Date time format
     """
     log_level = getattr(logging, level.upper(), logging.WARNING)
 
@@ -36,17 +36,17 @@ def configure_logging(
 
 
 def get_logger(name: str) -> logging.Logger:
-    """获取项目专用的日志记录器。
+    """Get project-specific logger.
 
     Args:
-        name: 日志记录器名称
+        name: Logger name
 
     Returns:
-        配置好的日志记录器
+        Configured logger
     """
     return logging.getLogger(f"image_splitter.{name}")
 
 
 def setup_default_logging() -> None:
-    """设置默认日志配置 (启动时自动调用)"""
+    """Set default logging configuration (called automatically on startup)"""
     configure_logging(level="WARNING")

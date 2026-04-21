@@ -1,3 +1,4 @@
+"""Filter processor for applying visual effects like grayscale and inversion."""
 # image_splitter/processors/filters.py
 from typing import Any, Dict, List, Tuple
 
@@ -65,7 +66,7 @@ class SimpleFilterProcessor(BaseProcessor):
 
         return [(img, {"action": "filter"})]
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
         try:
             def get_val(key):
                 v = props.get(key)

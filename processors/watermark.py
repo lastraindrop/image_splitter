@@ -1,3 +1,4 @@
+"""Text watermark processor for adding semi-transparent labels to images."""
 # image_splitter/processors/watermark.py
 from typing import Any, Dict, List, Tuple
 
@@ -54,23 +55,23 @@ class TextWatermark(BaseProcessor):
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
         """Add text watermark."""
         text = config.get("text", "")
-        size = int(config.get("size", 40))
-        opacity = int(config.get("opacity", 128))
+        opacity = int(float(config.get("opacity", 128)))
+        size = int(float(config.get("size", 40)))
         anchor = config.get("anchor", "BR")
 
         img = image.convert("RGBA")
         txt_layer = Image.new("RGBA", img.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_layer)
-        
+
         try:
             font = ImageFont.truetype("arial.ttf", size)
         except Exception:
-            font = ImageFont.load_default()
-            
+            font = ImageFont.load_default() # type: ignore
+
         w, h = img.size
-        bbox = draw.textbbox((0, 0), text, font=font)
+        bbox = draw.textbbox((0, 0), text, font=font) # type: ignore
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        
+
         padding = 20
         if anchor == "TL": 
             x, y = padding, padding
@@ -82,19 +83,15 @@ class TextWatermark(BaseProcessor):
             x, y = w - tw - padding, h - th - padding
         else: 
             x, y = (w - tw) // 2, (h - th) // 2 
-        
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
-        out = Image.alpha_composite(img, txt_layer)
-        if image.mode != "RGBA":
-            out = out.convert(image.mode)
 
-        return [(out, {"action": "watermarked", "text": text, "anchor": anchor})]
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity)) # type: ignore
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas: Any, thumb_size: Tuple[int, int], canvas_pos: Tuple[int, int], ratio: float, props: Dict[str, Any], theme: Any) -> None:
         try:
-            def get_val(key):
+            def get_val(key: str) -> Any:
                 v = props.get(key)
                 return v.get() if hasattr(v, 'get') else v
+
 
             anchor = get_val("anchor") or "BR"
             text = get_val("text") or "PREVIEW"

@@ -1,9 +1,8 @@
 # image_splitter/settings.py
 """Settings system for CLI configuration persistence."""
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "output_dir": "./output",

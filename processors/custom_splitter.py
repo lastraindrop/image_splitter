@@ -1,3 +1,4 @@
+"""Custom line splitter processor for dividing images at specific pixel coordinates."""
 # image_splitter/processors/custom_splitter.py
 import ast
 from typing import Any, Dict, List, Tuple
@@ -72,7 +73,7 @@ class CustomLineSplitter(BaseProcessor):
                 
         return results
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme):
+    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
         try:
             def get_val(key):
                 v = props.get(key)

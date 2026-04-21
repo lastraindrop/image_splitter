@@ -1,10 +1,10 @@
 # image_splitter/cli.py
+"""Command-line interface for Image Splitter Pro."""
 import sys
-import os
 from pathlib import Path
 
 # ---------------------------------------------------------
-# 路径自修复：支持绝对导入 image_splitter
+# Path self-fix: supports absolute import of image_splitter
 # ---------------------------------------------------------
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
@@ -24,59 +24,59 @@ from image_splitter import script_engine
 def _positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
-        raise argparse.ArgumentTypeError("必须是大于 0 的整数")
+        raise argparse.ArgumentTypeError("Must be an integer greater than 0")
     return parsed
 
 
 def _parse_set_option(raw: str):
     if "=" not in raw:
-        raise argparse.ArgumentTypeError("--set 必须使用 key=value 格式")
+        raise argparse.ArgumentTypeError("--set must use key=value format")
     key, value = raw.split("=", 1)
     key = key.strip()
     if not key:
-        raise argparse.ArgumentTypeError("--set 的 key 不能为空")
+        raise argparse.ArgumentTypeError("--set key cannot be empty")
     return key, value
 
 def main():
-    # 加载设置
+    # Load settings
     loaded_settings = settings.load_settings()
 
-    parser = argparse.ArgumentParser(description="通用图像处理工具 (CLI 版)")
+    parser = argparse.ArgumentParser(description="Universal Image Processing Tool (CLI Version)")
 
-    # 核心参数
-    parser.add_argument("input", help="输入文件、目录或通配符路径 (如: ./pics/*.png)")
+    # Core parameters
+    parser.add_argument("input", help="Input file, directory, or wildcard path (e.g., ./pics/*.png)")
     parser.add_argument("-o", "--output",
                       default=loaded_settings.get("output_dir", "./output"),
-                      help="输出目录 (默认: 从设置读取或 ./output)")
+                      help="Output directory (default: read from settings or ./output)")
     parser.add_argument("-p", "--processor",
                       default=loaded_settings.get("default_processor", "grid_splitter"),
-                      help="处理器名称 (默认: 从设置读取或 grid_splitter)")
+                      help="Processor name (default: read from settings or grid_splitter)")
     parser.add_argument("--set", dest="set_items", action="append", default=[], type=_parse_set_option,
-                        help="处理器参数，格式 key=value，可重复传入")
+                        help="Processor parameters, format key=value, can be passed multiple times")
 
-    # 网格切割兼容参数 (保留原有体验)
+    # Grid splitting compatible parameters (preserve legacy experience)
     default_rows = loaded_settings.get("default_rows", 3)
     default_cols = loaded_settings.get("default_cols", 3)
-    parser.add_argument("-r", "--rows", type=_positive_int, help=f"网格切割的行数 (默认: {default_rows})")
-    parser.add_argument("-c", "--cols", type=_positive_int, help=f"网格切割列数 (默认: {default_cols})")
+    parser.add_argument("-r", "--rows", type=_positive_int, help=f"Number of rows for grid splitting (default: {default_rows})")
+    parser.add_argument("-c", "--cols", type=_positive_int, help=f"Number of columns for grid splitting (default: {default_cols})")
 
-    # 高级参数
+    # Advanced parameters
     parser.add_argument("--offset", type=int, nargs=4, default=[0, 0, 0, 0],
-                        help="边缘偏移量: 左 上 右 下 (像素)")
+                        help="Edge offset: Left Top Right Bottom (pixels)")
     parser.add_argument("-t", "--template",
                       default=loaded_settings.get("template", "{filename}_{index}"),
-                      help="输出文件名模板 (默认: 从设置读取)")
+                      help="Output filename template (default: read from settings)")
     max_workers = loaded_settings.get("max_workers", 0)
     parser.add_argument("-j", "--jobs", type=_positive_int,
                       default=max_workers if max_workers > 0 else multiprocessing.cpu_count(),
-                      help=f"并行进程数 (默认: CPU 核心数)")
-    parser.add_argument("--recursive", action="store_true", help="是否递归搜索子目录")
+                      help="Number of parallel processes (default: CPU core count)")
+    parser.add_argument("--recursive", action="store_true", help="Whether to search subdirectories recursively")
 
-    # 脚本参数
+    # Script parameters
     parser.add_argument("-s", "--script", metavar="FILE",
-                      help="脚本文件路径")
+                      help="Script file path")
     parser.add_argument("--chain", metavar="SPEC",
-                      help="链式操作 spec，如 'resizer(width=0.5)|grid_splitter(rows=2,cols=2)'")
+                      help="Chained operation spec, e.g., 'resizer(width=0.5)|grid_splitter(rows=2,cols=2)'")
 
     args = parser.parse_args()
 
@@ -85,12 +85,12 @@ def main():
     try:
         processor = ProcessorRegistry.get(args.processor)
     except ValueError:
-        print(f"[FAIL] 未找到处理器: {args.processor}")
+        print(f"[FAIL] Processor not found: {args.processor}")
         available = ", ".join([p.name for p in ProcessorRegistry.list_all()])
-        print(f"[INFO] 可用处理器: {available}")
+        print(f"[INFO] Available processors: {available}")
         sys.exit(1)
 
-    # 脚本/链式处理模式
+    # Script/Chain processing mode
     if args.script:
         engine = script_engine.ScriptEngine()
         result = engine.batch_script(args.script, [str(f) for f in [Path(args.input)]], str(output_dir))
@@ -103,14 +103,14 @@ def main():
         print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
         sys.exit(0 if result.success else 1)
 
-    # 1. 环境检查与输入解析
+    # 1. Environment check and input parsing
     input_files = []
     output_dir = Path(args.output).resolve()
     
-    # 允许的后缀
+    # Allowed extensions
     exts = ["jpg", "jpeg", "png", "bmp", "webp"]
     
-    # 首先检查是否是直接存在的目录/文件
+    # First check if it is a directory/file that exists directly
     p = Path(args.input)
     if p.is_dir():
         pattern = "**/*" if args.recursive else "*"
@@ -120,7 +120,7 @@ def main():
     elif p.is_file():
         input_files.append(p)
     else:
-        # 尝试通配符解析
+        # Try wildcard parsing
         glob_matches = glob.glob(args.input, recursive=args.recursive)
         for g in glob_matches:
             gp = Path(g)
@@ -132,20 +132,20 @@ def main():
                     input_files.extend(gp.glob(f"**/*.{ext}"))
                     input_files.extend(gp.glob(f"**/*.{ext.upper()}"))
 
-    # 去重并排序
+    # Deduplicate and sort
     input_files = sorted(list(set(input_files)))
 
-    # 过滤掉输出目录及其子目录内的文件（防止死循环）
+    # Filter out files in the output directory and its subdirectories (prevent infinite loops)
     try:
         input_files = [f for f in input_files if not f.resolve().is_relative_to(output_dir)]
     except ValueError:
         pass
 
     if not input_files:
-        print(f"[INFO] 未找到有效的图片文件: {args.input}")
+        print(f"[INFO] No valid image files found: {args.input}")
         sys.exit(1)
 
-    print(f"[INFO] 准备处理 {len(input_files)} 个文件 (并发数: {args.jobs})...\n")
+    print(f"[INFO] Preparing to process {len(input_files)} file(s) (concurrency: {args.jobs})...\n")
 
     total_success = 0
 
@@ -160,13 +160,13 @@ def main():
     config["output_dir"] = str(output_dir)
     config["template"] = args.template
 
-    # BUG-06 修复: 对 --set 参数进行类型强制转换
+    # BUG-06 Fix: Coerce types for --set parameters
     raw_config = config.copy()
     try:
         coerced_config = coerce_processor_config(processor, raw_config)
         config = coerced_config
     except ValueError as e:
-        print(f"[FAIL] 参数配置错误: {e}")
+        print(f"[FAIL] Parameter configuration error: {e}")
         sys.exit(1)
 
     if args.processor == "grid_splitter":
@@ -177,7 +177,7 @@ def main():
         if "offsets" not in config:
             config["offsets"] = tuple(args.offset)
 
-    # 2. 并行执行处理
+    # 2. Parallel processing
     with ProcessPoolExecutor(max_workers=args.jobs) as executor:
         futures = [executor.submit(process_image, str(f), processor.name, config) for f in input_files]
 
@@ -189,10 +189,10 @@ def main():
                 if success:
                     total_success += 1
             except Exception as e:
-                print(f"[FAIL] {f_path.name}: 运行时异常 - {e}")
+                print(f"[FAIL] {f_path.name}: Runtime exception - {e}")
 
     print("-" * 30)
-    print(f"[DONE] 完成！成功: {total_success} / 总计: {len(input_files)}")
+    print(f"[DONE] Completed! Success: {total_success} / Total: {len(input_files)}")
     
     if total_success < len(input_files):
         sys.exit(1)

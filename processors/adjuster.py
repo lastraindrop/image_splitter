@@ -1,3 +1,4 @@
+"""Canvas adjuster processor for padding or cropping image boundaries."""
 # image_splitter/processors/adjuster.py
 from typing import Any, Dict, List, Tuple
 
