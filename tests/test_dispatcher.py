@@ -1,6 +1,9 @@
-# image_splitter/tests/test_dispatcher.py
+"""Tests for command dispatcher."""
+
 import unittest
+
 from PIL import Image
+
 from image_splitter.engine.dispatcher import CommandDispatcher
 from image_splitter.engine.registry import ProcessorRegistry
 

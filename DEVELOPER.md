@@ -14,14 +14,17 @@ image_splitter/
 │   ├── dispatcher.py   # Command parsing and chaining
 │   └── config_coercion.py  # Parameter type coercion
 ├── processors/           # Processor plugins (10 total)
-├── models.py             # Configuration dataclasses
 ├── core.py              # Processing pipeline
 ├── cli.py               # CLI entry point
 ├── gui.py               # GUI entry point
 ├── settings.py          # User settings persistence
 ├── keymap.py           # Keybinding system
+├── logging_config.py    # Logging configuration
+
+├── models.py             # Configuration models
 ├── script_engine.py     # Batch scripting engine
-├── tests/               # Test suite (69 tests)
+├── ui/                  # UI components
+├── tests/               # Test suite (136 tests)
 └── pyproject.toml      # Package configuration
 ```
 
@@ -67,6 +70,8 @@ All external input must be validated for type, range, and physical validity befo
 
 - Follows [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
 - All core functions include complete Google-style Docstrings
+- Imports grouped: standard library → third-party → local, alphabetically within each group
+- Type annotations required on all public functions and methods
 - Path handling uses `pathlib.Path` for cross-platform robustness
 - Logging uses the standard `logging` module instead of `print()`
 
@@ -196,6 +201,10 @@ python -m pytest tests/ --cov=image_splitter
 - Metadata completeness (name, label, type, default)
 - Parameter coercion (type conversion)
 - UI addressability (can be rendered in GUI)
+- Edge case resilience (invalid inputs, boundary values, special image modes)
+- Integration tests (end-to-end pipeline, script engine, CLI chain mode)
+- Keymap persistence (bind/unbind, save/load, reset)
+- Settings persistence (round-trip, merge with defaults, corrupt JSON resilience)
 
 ## Logging
 
@@ -234,6 +243,10 @@ def save_output(image: Image.Image, output_dir: str, filename: str) -> Path:
 - [x] **Compliance Testing**: Automated plugin protocol detection
 - [x] **UI Enhancement**: Adaptive controls with type validation
 - [x] **V5.5 Refactor**: Google Python Style compliance
+- [x] **V6.0 Hardening**: Full Google Python Style compliance audit and fix
+- [x] **Bug Fixes**: 10 bugs fixed (watermark return, CLI undefined var, script engine save, geometry cleanup)
+- [x] **Test Expansion**: 67 new tests (total 136), including integration, settings, keymap, edge cases
+- [x] **Type Annotations**: All methods annotated across gui.py(28), models.py(8), processors(6), cli.py(3)
 
 ### Short-Term Goals
 - [ ] **Static Type Checking**: Integrate mypy for full type scanning

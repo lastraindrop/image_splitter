@@ -120,6 +120,8 @@ image_splitter/
 ├── keymap.py               # Keybinding system
 ├── script_engine.py         # Batch scripting engine
 ├── logging_config.py       # Logging configuration
+
+├── models.py               # Configuration dataclasses
 ├── pyproject.toml         # Package configuration
 ├── engine/
 │   ├── base.py             # BaseProcessor/BaseConfig abstract classes
@@ -127,8 +129,8 @@ image_splitter/
 │   ├── dispatcher.py       # Command dispatcher for chaining
 │   └── config_coercion.py  # Parameter type coercion
 ├── processors/             # Processor plugins (10 total)
-├── models.py               # Configuration dataclasses
-└── tests/                 # Test suite (69 tests)
+├── ui/
+└── tests/                 # Test suite (136 tests)
 ```
 
 ## Requirements
@@ -139,3 +141,31 @@ image_splitter/
 ## License
 
 MIT
+
+## Test Suite
+
+The project includes 136 tests across 21 test files:
+
+| Test File | Description |
+|-----------|-------------|
+| `test_adjuster.py` | Canvas adjuster: padding, cropping, ratio, fail-fast validation |
+| `test_bug_fixes.py` | Regression tests for all confirmed bug fixes |
+| `test_cli.py` | CLI mode: basic flow, recursive discovery, concurrency, error handling |
+| `test_config_coercion.py` | Parameter type coercion for all supported types |
+| `test_custom_splitter.py` | Custom line splitter: simple, irregular, out-of-bounds, negative rejection |
+| `test_dispatcher.py` | Command parsing: simple, complex literals, chain execution |
+| `test_dispatcher_coercion.py` | Type coercion in dispatch: defaults, strings, complex chains |
+| `test_edge_cases.py` | Edge case tests for all processors: 1x1, tiny ratios, empty text, P-mode |
+| `test_engine_v4.py` | Registry integrity, processor smoke test, path security, format adaptation |
+| `test_error_paths.py` | Error handling: missing files, invalid templates, bad enum/list values |
+| `test_gui_smoke.py` | GUI initialization, file selection, processor switching, stop/cancel |
+| `test_gui_workflows.py` | GUI workflow: full parameter coercion and batch run verification |
+| `test_integration.py` | End-to-end: full pipeline, RGBA/L-mode smoke, CLI chain, template vars |
+| `test_keymap.py` | Keybinding: bind/unbind/lookup, import/export, reset, multiple contexts |
+| `test_operator_compliance.py` | Compliance audit: naming, metadata schema, category, GUI addressability |
+| `test_parameter_contract.py` | Parameter contract: metadata completeness, coercion type matching |
+| `test_processors_expanded.py` | Deep: rounding consistency, watermark positioning, pixel accuracy, stress test |
+| `test_save_compatibility.py` | Save: ICC profile preservation, format conversion extension changes |
+| `test_script_engine.py` | Script engine: process, chain, batch script, error handling, operators list |
+| `test_settings.py` | Settings: defaults, save/load roundtrip, merge, get/set, corrupted JSON |
+| `test_ui_preview.py` | Preview rendering: all processor draw_preview, graceful dirty-data handling |

@@ -107,7 +107,11 @@ def process_image(
         processor = ProcessorRegistry.get(processor_name)
 
         # 1. Unified configuration coercion and model validation (Fail-Fast)
-        raw_dict = config if isinstance(config, dict) else (config.__dict__ if hasattr(config, '__dict__') else {})
+        raw_dict = (
+            config if isinstance(config, dict)
+            else config.__dict__ if hasattr(config, '__dict__')
+            else {}
+        )
         config_dict = coerce_processor_config(processor, raw_dict)
         
         if processor.config_model:
@@ -178,7 +182,11 @@ def process_image(
                         cell.close()
                 count += 1
                 
-        return True, f"Successfully completed [{processor.display_name}] task, generated {count} image(s) to {output_dir}"
+        return (
+            True,
+            f"Successfully completed [{processor.display_name}] task, "
+            f"generated {count} image(s) to {output_dir}"
+        )
         
     except Exception as e:
         logger.exception("Error processing image %s", image_path)

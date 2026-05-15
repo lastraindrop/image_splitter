@@ -1,8 +1,10 @@
+"""Tests for parameter contract."""
+
 import unittest
 
-from image_splitter.core import register_all_processors
-from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.engine.config_coercion import coerce_processor_config
+from image_splitter.engine.registry import ProcessorRegistry
+from image_splitter.core import register_all_processors
 
 
 class TestParameterContract(unittest.TestCase):

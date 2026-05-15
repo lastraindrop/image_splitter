@@ -1,8 +1,11 @@
 # image_splitter/engine/dispatcher.py
 """Command parsing and chained dispatching for operators."""
 import ast
+
+from typing import Any, Dict, List, Tuple
+
 from PIL import Image
-from typing import Dict, Any, List, Tuple
+
 from image_splitter.engine.registry import ProcessorRegistry
 
 class CommandDispatcher:
@@ -35,6 +38,7 @@ class CommandDispatcher:
 
     @classmethod
     def parse_command(cls, cmd_str: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """Parse a command string into a list of (operator_name, props) tuples."""
         ops = []
         tokens = cmd_str.split('|')
         for token in tokens:

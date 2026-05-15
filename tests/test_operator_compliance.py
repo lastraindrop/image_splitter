@@ -1,7 +1,9 @@
-# image_splitter/tests/test_operator_compliance.py
+"""Tests for operator compliance."""
+
 import unittest
-from image_splitter.engine.registry import ProcessorRegistry
+
 from image_splitter.core import register_all_processors
+from image_splitter.engine.registry import ProcessorRegistry
 
 class TestOperatorCompliance(unittest.TestCase):
     """

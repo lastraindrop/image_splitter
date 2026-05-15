@@ -1,8 +1,11 @@
-# image_splitter/tests/test_processors_expanded.py
-import unittest
+"""Tests for processors expanded."""
+
 import tempfile
-from PIL import Image
+import unittest
 from pathlib import Path
+
+from PIL import Image
+
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.models import SplitConfig
 

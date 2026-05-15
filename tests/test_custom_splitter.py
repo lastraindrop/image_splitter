@@ -1,10 +1,13 @@
-# image_splitter/tests/test_custom_splitter.py
-import unittest
+"""Tests for custom splitter."""
+
 import tempfile
-from PIL import Image
+import unittest
 from pathlib import Path
-from image_splitter.models import CustomSplitConfig
+
+from PIL import Image
+
 from image_splitter.core import process_image
+from image_splitter.models import CustomSplitConfig
 
 class TestCustomSplitter(unittest.TestCase):
     def setUp(self):

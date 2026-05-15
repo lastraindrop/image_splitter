@@ -8,7 +8,7 @@ class ProcessorRegistry:
 
     _instance: Optional["ProcessorRegistry"] = None
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._processors: Dict[str, Any] = {}
 
     @classmethod

@@ -1,8 +1,11 @@
-# image_splitter/tests/test_dispatcher_coercion.py
+"""Tests for dispatcher coercion."""
+
 import unittest
+
 from PIL import Image
-from image_splitter.engine.dispatcher import CommandDispatcher
+
 from image_splitter.core import register_all_processors
+from image_splitter.engine.dispatcher import CommandDispatcher
 
 class TestDispatcherCoercion(unittest.TestCase):
     @classmethod

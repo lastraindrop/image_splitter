@@ -1,7 +1,8 @@
-from .core import process_image, split_image_core, batch_process_images
-from .models import SplitConfig, AdjustConfig, CustomSplitConfig, ResizeConfig
+"""Image Splitter Pro - main package."""
 
+from .core import process_image, split_image_core, batch_process_images
 from .logging_config import configure_logging, get_logger, setup_default_logging
+from .models import SplitConfig, AdjustConfig, CustomSplitConfig, ResizeConfig
 
 setup_default_logging()
 

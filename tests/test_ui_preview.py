@@ -1,3 +1,5 @@
+"""Tests for UI preview."""
+
 import unittest
 
 try:
@@ -6,7 +8,7 @@ try:
     _HAS_TK = True
 except ImportError:
     tk = None
-    gui = None  # type: ignore
+    gui = None
     _HAS_TK = False
 
 from image_splitter.core import register_all_processors

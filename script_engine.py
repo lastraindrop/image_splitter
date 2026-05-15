@@ -7,8 +7,8 @@ from typing import Any, Dict, List, Optional
 from PIL import Image
 
 from image_splitter.core import process_image, register_all_processors
-from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.engine.dispatcher import CommandDispatcher
+from image_splitter.engine.registry import ProcessorRegistry
 
 
 class ScriptResult:
@@ -72,25 +72,33 @@ class ScriptEngine:
 
         Example: chain_spec = "resizer(width=0.5)|grid_splitter(rows=2,cols=2)"
         """
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         results = []
-        current_images = []
+        output_files = []
+        idx = 1
 
         for path in input_paths:
-            img = Image.open(path)
-            try:
-                processed = CommandDispatcher.execute_chain(img, chain_spec)
-                current_images.extend(processed)
-                results.append((path, True, "Success"))
-            except Exception as e:
-                results.append((path, False, str(e)))
+            with Image.open(path) as img:
+                try:
+                    processed = CommandDispatcher.execute_chain(img, chain_spec)
+                    for proc_img in processed:
+                        stem = Path(path).stem
+                        out_path = Path(output_dir) / f"{stem}_chain_{idx:02d}.png"
+                        proc_img.save(out_path)
+                        output_files.append(out_path)
+                        proc_img.close()
+                        idx += 1
+                    results.append((path, True, "Success"))
+                except Exception as e:
+                    results.append((path, False, str(e)))
 
         success_count = sum(1 for _, s, _ in results if s)
 
         return ScriptResult(
             success_count > 0,
             f"Chain processed {success_count}/{len(input_paths)} files",
-            []
+            output_files
         )
 
     def batch_script(

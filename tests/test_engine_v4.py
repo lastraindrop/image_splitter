@@ -1,8 +1,11 @@
-# image_splitter/tests/test_engine_v4.py
-import unittest
+"""Tests for engine v4."""
+
 import tempfile
-from PIL import Image
+import unittest
 from pathlib import Path
+
+from PIL import Image
+
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.models import SplitConfig

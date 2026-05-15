@@ -21,14 +21,14 @@ class SplitConfig:
     template: str = "{filename}_{index}"
     offsets: Tuple[int, int, int, int] = (0, 0, 0, 0)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if not isinstance(self.rows, int) or not isinstance(self.cols, int):
             raise ValueError("Rows and columns must be integers")
         if not isinstance(self.offsets, (tuple, list)) or len(self.offsets) != 4:
             raise ValueError("Offsets must be a tuple or list of 4 integers")
         self.validate()
 
-    def validate(self):
+    def validate(self) -> None:
         if self.rows <= 0 or self.cols <= 0:
             raise ValueError("Rows and columns must be positive integers")
         if any(o < 0 for o in self.offsets):
@@ -45,16 +45,19 @@ class AdjustConfig:
     bg_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
     template: str = "{filename}_adjusted"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if isinstance(self.width, str):
             self.width = float(self.width) if '.' in self.width else int(self.width)
         if isinstance(self.height, str):
             self.height = float(self.height) if '.' in self.height else int(self.height)
         self.validate()
 
-    def validate(self):
+    def validate(self) -> None:
         if not isinstance(self.width, (int, float)) or not isinstance(self.height, (int, float)):
-            raise ValueError(f"Target width and height must be numbers (Got {type(self.width)})")
+            raise ValueError(
+                f"Target width and height must be numbers "
+                f"(Got {type(self.width)})"
+            )
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Target width and height must be greater than 0")
 
@@ -67,10 +70,10 @@ class CustomSplitConfig:
     output_dir: str
     template: str = "{filename}_{row}_{col}"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.validate()
 
-    def validate(self):
+    def validate(self) -> None:
         if not isinstance(self.h_lines, (list, tuple)) or not isinstance(self.v_lines, (list, tuple)):
             raise ValueError("Split lines must be in list or tuple format")
         if any(not isinstance(x, int) or x < 0 for x in self.h_lines + self.v_lines):
@@ -106,10 +109,10 @@ class ResizeConfig:
     width: float = 1.0
     height: float = 1.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.validate()
 
-    def validate(self):
+    def validate(self) -> None:
         if self.width <= 0 or self.height <= 0:
             raise ValueError("Resize ratio must be greater than 0")
 

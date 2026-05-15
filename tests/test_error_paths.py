@@ -1,3 +1,5 @@
+"""Tests for error paths."""
+
 import tempfile
 import unittest
 from pathlib import Path

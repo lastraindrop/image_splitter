@@ -1,9 +1,13 @@
 # image_splitter/gui.py
 """Graphical user interface for Image Splitter Pro."""
-import sys
-import os
 import logging
+import os
+import platform
+import subprocess
+import sys
+import threading
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 project_root = str(Path(__file__).resolve().parent.parent)
 if project_root not in sys.path:
@@ -11,22 +15,20 @@ if project_root not in sys.path:
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import threading
-import platform
-import subprocess
+
 from PIL import Image, ImageTk
-from image_splitter.core import register_all_processors
-from image_splitter.engine.registry import ProcessorRegistry
+
+from image_splitter import keymap, settings
+from image_splitter.core import register_all_processors, batch_process_images
 from image_splitter.engine.config_coercion import coerce_processor_config
-from image_splitter import settings
-from image_splitter import keymap
+from image_splitter.engine.registry import ProcessorRegistry
 
 logger = logging.getLogger(__name__)
 
 _CANVAS_BG = "#0a0a0a"
 
 
-def _detect_ui_font():
+def _detect_ui_font() -> str:
     """Cross-platform UI font detection."""
     system = platform.system()
     if system == "Windows":
@@ -37,7 +39,7 @@ def _detect_ui_font():
         return "Noto Sans CJK SC"
 
 
-def _detect_mono_font():
+def _detect_mono_font() -> str:
     """Cross-platform monospace font detection."""
     system = platform.system()
     if system == "Windows":
@@ -49,6 +51,7 @@ def _detect_mono_font():
 
 
 class UITheme:
+    """Theme colors for the dark UI."""
     DARK_BG = "#121212"
     PANEL_BG = "#1e1e1e"
     ITEM_BG = "#2d2d2d"
@@ -65,7 +68,9 @@ class UITheme:
 
 
 class ImageSplitterApp:
-    def __init__(self, root):
+    """Main GUI application class."""
+
+    def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Image Splitter Pro")
         self.root.geometry("1100x750")
@@ -88,14 +93,14 @@ class ImageSplitterApp:
         self._setup_style()
         self._create_widgets()
 
-    def _font(self, size=10, bold=False):
+    def _font(self, size: int = 10, bold: bool = False) -> Tuple[str, int, str]:
         weight = "bold" if bold else "normal"
         return (self.ui_font, size, weight)
 
-    def _mono(self, size=10):
+    def _mono(self, size: int = 10) -> Tuple[str, int]:
         return (self.mono_font, size)
 
-    def _setup_style(self):
+    def _setup_style(self) -> None:
         self.root.configure(bg=self.theme.DARK_BG)
         style = ttk.Style()
         style.theme_use('clam')
@@ -114,7 +119,7 @@ class ImageSplitterApp:
 
         style.configure("Modern.Horizontal.TProgressbar", thickness=6, background=self.theme.ACCENT, troughcolor=self.theme.BORDER, borderwidth=0)
 
-    def _create_widgets(self):
+    def _create_widgets(self) -> None:
         self.main_container = tk.Frame(self.root, bg=self.theme.DARK_BG)
         self.main_container.pack(fill=tk.BOTH, expand=True)
 
@@ -130,7 +135,7 @@ class ImageSplitterApp:
             self.processor_combo.current(0)
             self._on_processor_changed()
 
-    def _create_left_panel(self):
+    def _create_left_panel(self) -> None:
         self.left_panel = tk.Frame(self.paned, bg=self.theme.PANEL_BG, width=350)
         self.paned.add(self.left_panel, weight=0)
 
@@ -180,7 +185,7 @@ class ImageSplitterApp:
         self.btn_stop = ttk.Button(self.bottom_btn_frame, text="Abort", state=tk.DISABLED, command=self.stop_tasks)
         self.btn_stop.pack(fill=tk.X, pady=5)
 
-    def _bind_keymap(self):
+    def _bind_keymap(self) -> None:
         loaded_keymap = keymap.load_keymap()
         global_binds = loaded_keymap.get("global", {})
         for key_seq, action in global_binds.items():
@@ -193,7 +198,7 @@ class ImageSplitterApp:
 
         self.root.bind("<Delete>", lambda e: self.remove_selected())
 
-    def _resolve_action(self, action_name):
+    def _resolve_action(self, action_name: str) -> Optional[Callable]:
         return {
             "select_files": self.select_files,
             "run_batch": self.run_batch,
@@ -202,7 +207,7 @@ class ImageSplitterApp:
             "stop_tasks": self.stop_tasks,
         }.get(action_name)
 
-    def _create_right_widgets(self):
+    def _create_right_widgets(self) -> None:
         self.right_container = tk.Frame(self.paned, bg=self.theme.DARK_BG)
         self.paned.add(self.right_container, weight=1)
 
@@ -241,7 +246,7 @@ class ImageSplitterApp:
         self.status_label = tk.Label(self.status_container, text="READY", font=self._mono(8), bg=self.theme.DARK_BG, fg=self.theme.DIM_FG)
         self.status_label.pack(side=tk.LEFT)
 
-    def _on_processor_changed(self, event=None):
+    def _on_processor_changed(self, event: Optional[tk.Event] = None) -> None:
         for child in self.props_frame.winfo_children():
             child.destroy()
         self.dynamic_vars = {}
@@ -279,7 +284,7 @@ class ImageSplitterApp:
 
         self.fast_update_preview()
 
-    def select_files(self):
+    def select_files(self) -> None:
         file_types = [("Images", "*.jpg *.jpeg *.png *.bmp *.webp"), ("All Files", "*.*")]
         files = filedialog.askopenfilenames(title="Select images", filetypes=file_types)
         if files:
@@ -290,7 +295,7 @@ class ImageSplitterApp:
             self.file_listbox.selection_set(0)
             self._on_file_selected()
 
-    def remove_selected(self):
+    def remove_selected(self) -> None:
         indices = sorted(self.file_listbox.curselection(), reverse=True)
         if not indices:
             return
@@ -305,7 +310,7 @@ class ImageSplitterApp:
             self.file_listbox.selection_set(0)
             self._on_file_selected()
 
-    def clear_list(self):
+    def clear_list(self) -> None:
         if messagebox.askyesno("Clear", "Clear all files?"):
             self.file_listbox.delete(0, tk.END)
             self.current_files = []
@@ -313,7 +318,7 @@ class ImageSplitterApp:
             self.canvas.delete("all")
             self.info_label.config(text="Load image(s) to preview")
 
-    def open_output_dir(self):
+    def open_output_dir(self) -> None:
         path = self._last_output_dir
         if not os.path.exists(path):
             Path(path).mkdir(parents=True, exist_ok=True)
@@ -328,7 +333,7 @@ class ImageSplitterApp:
             logger.error("Failed to open output dir: %s", e)
             messagebox.showinfo("Info", f"Output: {path}")
 
-    def run_batch(self):
+    def run_batch(self) -> None:
         if not self.current_files:
             messagebox.showwarning("Warning", "No files selected")
             return
@@ -358,10 +363,9 @@ class ImageSplitterApp:
         self.status_label.config(text="Processing...", foreground=self.theme.ACCENT)
         threading.Thread(target=self.work_thread, args=(processor.name, processed_config, output_dir), daemon=True).start()
 
-    def work_thread(self, p_name, config, output_dir):
+    def work_thread(self, p_name: str, config: Dict[str, Any], output_dir: str) -> None:
         total = len(self.current_files)
         success_count = 0
-        from image_splitter.core import batch_process_images
         for i, (path, is_success, msg) in enumerate(batch_process_images(self.current_files, p_name, config)):
             if self.stop_event.is_set():
                 self.root.after(0, lambda: self.finish_report(success_count, total, True))
@@ -372,16 +376,16 @@ class ImageSplitterApp:
             self.root.after(0, lambda p=progress, m=msg: self.update_progress(p, m))
         self.root.after(0, lambda: self.finish_report(success_count, total))
 
-    def update_progress(self, p, msg):
+    def update_progress(self, p: float, msg: str) -> None:
         self.progress_var.set(p)
         self.status_label.config(text=msg)
 
-    def stop_tasks(self):
+    def stop_tasks(self) -> None:
         if messagebox.askyesno("Stop", "Abort current task?"):
             self.stop_event.set()
             self.status_label.config(text="Stopping...")
 
-    def fast_update_preview(self):
+    def fast_update_preview(self) -> None:
         if not self.thumb_img:
             return
         self.canvas.delete("overlay")
@@ -395,11 +399,14 @@ class ImageSplitterApp:
         x0, y0 = (cw - nw) // 2, (ch - nh) // 2
 
         try:
-            processor.draw_preview(self.canvas, thumb_size=(nw, nh), canvas_pos=(x0, y0), ratio=self.preview_ratio, props=self.dynamic_vars, theme=self.theme)
+            processor.draw_preview(
+                self.canvas, thumb_size=(nw, nh), canvas_pos=(x0, y0),
+                ratio=self.preview_ratio, props=self.dynamic_vars, theme=self.theme,
+            )
         except Exception as e:
             logger.debug("Preview render error: %s", e)
 
-    def _on_file_selected(self, event=None):
+    def _on_file_selected(self, event: Optional[tk.Event] = None) -> None:
         selection = self.file_listbox.curselection()
         if not selection:
             return
@@ -421,10 +428,10 @@ class ImageSplitterApp:
             self.canvas.delete("all")
             self.info_label.config(text="Failed to load image")
 
-    def _on_canvas_configure(self, event):
+    def _on_canvas_configure(self, event: tk.Event) -> None:
         self.root.after(50, self._render_canvas)
 
-    def _render_canvas(self):
+    def _render_canvas(self) -> None:
         if not self.thumb_img:
             return
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
@@ -438,7 +445,7 @@ class ImageSplitterApp:
         self.canvas.create_image(cw // 2, ch // 2, image=self.tk_thumb, tags="bg")
         self.fast_update_preview()
 
-    def finish_report(self, s, total, aborted=False):
+    def finish_report(self, s: int, total: int, aborted: bool = False) -> None:
         self.btn_run.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
         if aborted:
@@ -446,7 +453,7 @@ class ImageSplitterApp:
         else:
             self.status_label.config(text=f"Done: {s}/{total}", foreground=self.theme.SUCCESS)
 
-    def on_close(self):
+    def on_close(self) -> None:
         if self.btn_run['state'] == tk.DISABLED:
             if not messagebox.askyesno("Exit", "Task is running. Force quit?"):
                 return
@@ -456,7 +463,7 @@ class ImageSplitterApp:
         self.root.destroy()
 
 
-def main():
+def main() -> None:
     root = tk.Tk()
     app = ImageSplitterApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)

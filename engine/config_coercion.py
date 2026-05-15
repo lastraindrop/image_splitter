@@ -50,6 +50,15 @@ def _coerce_value(meta: Dict[str, Any], value: Any) -> Any:
 
 
 def coerce_processor_config(processor: Any, raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Coerce raw configuration dict to match processor metadata types.
+
+    Args:
+        processor: A processor instance with get_ui_metadata method.
+        raw_config: Raw configuration dictionary from CLI or GUI.
+
+    Returns:
+        Coerced configuration dictionary with correct types.
+    """
     metadata = processor.get_ui_metadata()
     coerced: Dict[str, Any] = {}
 

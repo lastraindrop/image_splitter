@@ -1,14 +1,21 @@
-import unittest
+"""Tests for GUI workflows."""
+
 import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
-from PIL import Image
 
 try:
     import tkinter as tk
-    from image_splitter import gui
 except ImportError:
     tk = None
+
+from PIL import Image
+
+try:
+    from image_splitter import gui
+except ImportError:
+    gui = None
 
 @unittest.skipIf(tk is None, "Tkinter is not available")
 class TestGuiWorkflows(unittest.TestCase):

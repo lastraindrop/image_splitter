@@ -1,9 +1,11 @@
-# tests/test_cli.py
-import unittest
-import tempfile
+"""Tests for CLI."""
+
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import patch
+
 from image_splitter.cli import main
 
 class TestImageSplitterCLI(unittest.TestCase):

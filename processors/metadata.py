@@ -76,7 +76,15 @@ class MetadataProcessor(BaseProcessor):
 
         return [(clean_img, context)]
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
+    def draw_preview(
+        self,
+        canvas: Any,
+        thumb_size: Tuple[int, int],
+        canvas_pos: Tuple[int, int],
+        ratio: float,
+        props: Dict[str, Any],
+        theme: Any
+    ) -> None:
         try:
             def get_val(key):
                 v = props.get(key)

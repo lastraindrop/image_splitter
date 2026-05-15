@@ -1,3 +1,5 @@
+"""Tests for config coercion."""
+
 import unittest
 
 from image_splitter.engine.config_coercion import coerce_processor_config

@@ -1,2 +1,1 @@
-# ui/__init__.py
-# UI components placeholder for future expansion
+"""UI components package placeholder for future expansion."""

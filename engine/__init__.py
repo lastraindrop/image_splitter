@@ -1,6 +1,6 @@
-# engine/__init__.py
+"""Engine package - core processing infrastructure."""
 from .base import BaseProcessor
-from .registry import ProcessorRegistry
 from .dispatcher import CommandDispatcher
+from .registry import ProcessorRegistry
 
-__all__ = ["BaseProcessor", "ProcessorRegistry", "CommandDispatcher"]
+__all__ = ["BaseProcessor", "CommandDispatcher", "ProcessorRegistry"]

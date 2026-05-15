@@ -58,7 +58,6 @@ class GeometryProcessor(BaseProcessor):
         img = image.copy()
 
         # Rotation
-        # Rotation
         if angle == 90:
             img = img.transpose(Image.Transpose.ROTATE_90)
         elif angle == 180:
@@ -73,9 +72,17 @@ class GeometryProcessor(BaseProcessor):
             img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         return [(img, {"action": "geometry", "rotate": angle})]
 
-    def draw_preview(self, canvas, thumb_size, canvas_pos, ratio, props, theme) -> None:
+    def draw_preview(
+        self,
+        canvas: Any,
+        thumb_size: Tuple[int, int],
+        canvas_pos: Tuple[int, int],
+        ratio: float,
+        props: Dict[str, Any],
+        theme: Any
+    ) -> None:
         try:
-            def get_val(key):
+            def get_val(key: str) -> Any:
                 v = props.get(key)
                 return v.get() if hasattr(v, 'get') else v
 

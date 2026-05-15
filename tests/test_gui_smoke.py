@@ -1,3 +1,5 @@
+"""Tests for GUI smoke."""
+
 import tempfile
 import unittest
 from pathlib import Path

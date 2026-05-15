@@ -1,10 +1,13 @@
-# image_splitter/tests/test_adjuster.py
-import unittest
+"""Tests for canvas adjuster."""
+
 import tempfile
-from PIL import Image
+import unittest
 from pathlib import Path
-from image_splitter.models import AdjustConfig
+
+from PIL import Image
+
 from image_splitter.core import process_image
+from image_splitter.models import AdjustConfig
 
 class TestCanvasAdjuster(unittest.TestCase):
     def setUp(self):

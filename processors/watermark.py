@@ -66,10 +66,10 @@ class TextWatermark(BaseProcessor):
         try:
             font = ImageFont.truetype("arial.ttf", size)
         except Exception:
-            font = ImageFont.load_default() # type: ignore
+            font = ImageFont.load_default()
 
         w, h = img.size
-        bbox = draw.textbbox((0, 0), text, font=font) # type: ignore
+        bbox = draw.textbbox((0, 0), text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
         padding = 20
@@ -84,7 +84,17 @@ class TextWatermark(BaseProcessor):
         else: 
             x, y = (w - tw) // 2, (h - th) // 2 
 
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity)) # type: ignore
+        draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
+
+        composited = Image.alpha_composite(img, txt_layer)
+
+        context = {
+            "action": "watermarked",
+            "text": text,
+            "anchor": anchor,
+        }
+
+        return [(composited, context)]
 
     def draw_preview(self, canvas: Any, thumb_size: Tuple[int, int], canvas_pos: Tuple[int, int], ratio: float, props: Dict[str, Any], theme: Any) -> None:
         try:
