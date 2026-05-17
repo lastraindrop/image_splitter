@@ -1,4 +1,3 @@
-# image_splitter/models.py
 """Configuration models for image processors."""
 from dataclasses import dataclass
 from typing import Any, List, Tuple
@@ -102,6 +101,16 @@ class FormatConfig:
     format: str = "WebP"
     quality: int = 80
 
+    def __post_init__(self) -> None:
+        valid_formats = {"WebP", "JPEG", "PNG", "BMP"}
+        if self.format not in valid_formats:
+            raise ValueError(
+                f"Unsupported format: {self.format}. "
+                f"Valid options: {sorted(valid_formats)}"
+            )
+        if not isinstance(self.quality, int) or not (1 <= self.quality <= 100):
+            raise ValueError("Quality must be an integer between 1 and 100")
+
 
 @dataclass
 class ResizeConfig:
@@ -124,6 +133,14 @@ class GeometryConfig:
     flip_h: bool = False
     flip_v: bool = False
 
+    def __post_init__(self) -> None:
+        self.rotate = int(self.rotate)
+        if self.rotate not in (0, 90, 180, 270, 360):
+            raise ValueError(
+                f"Unsupported rotation angle: {self.rotate}. "
+                f"Only 0/90/180/270/360 degrees supported."
+            )
+
 
 @dataclass
 class MetadataConfig:
@@ -139,3 +156,15 @@ class WatermarkConfig:
     size: int = 40
     opacity: int = 128
     anchor: str = "BR"
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.size, int) or self.size <= 0:
+            raise ValueError("Font size must be a positive integer")
+        if not isinstance(self.opacity, int) or not (0 <= self.opacity <= 255):
+            raise ValueError("Opacity must be an integer between 0 and 255")
+        valid_anchors = {"TL", "TR", "BL", "BR", "C"}
+        if self.anchor not in valid_anchors:
+            raise ValueError(
+                f"Invalid anchor: {self.anchor}. "
+                f"Valid options: {sorted(valid_anchors)}"
+            )

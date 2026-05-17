@@ -1,13 +1,14 @@
-# image_splitter/keymap.py
 """Simple keybinding system for CLI and GUI."""
 import json
 from pathlib import Path
 from typing import Dict, Optional
 
+from image_splitter.settings import get_config_dir as _get_config_dir
+
 DEFAULT_KEYMAP = {
     "global": {
-        "<Ctrl-o>": "select_files",
-        "<Ctrl-Enter>": "run_batch",
+        "<Control-o>": "select_files",
+        "<Control-Return>": "run_batch",
         "<Delete>": "remove_selected",
     }
 }
@@ -15,10 +16,7 @@ DEFAULT_KEYMAP = {
 
 def get_config_dir() -> Path:
     """Get config directory path."""
-    home = Path.home()
-    config_dir = home / ".image_splitter"
-    config_dir.mkdir(exist_ok=True)
-    return config_dir
+    return _get_config_dir()
 
 
 def get_keymap_path() -> Path:

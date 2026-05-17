@@ -1,5 +1,4 @@
 """Custom line splitter processor for dividing images at specific pixel coordinates."""
-# image_splitter/processors/custom_splitter.py
 import ast
 from typing import Any, Dict, List, Tuple
 

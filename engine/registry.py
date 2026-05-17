@@ -1,4 +1,3 @@
-# image_splitter/engine/registry.py
 """Centralized registry for image processors."""
 from typing import Dict, Any, List, Optional
 

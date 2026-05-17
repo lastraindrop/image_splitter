@@ -1,4 +1,3 @@
-# image_splitter/core.py
 """Core image processing pipeline and processor discovery."""
 import importlib
 import logging
@@ -27,7 +26,7 @@ def _prepare_image_for_save(image: Image.Image, save_format: str) -> Image.Image
     Returns:
         Processed image object. If JPEG and contains transparency, it will be flattened.
     """
-    if save_format != 'JPEG':
+    if save_format not in ('JPEG', 'BMP'):
         return image
 
     if image.mode in ('RGB', 'L', 'CMYK'):
@@ -43,41 +42,59 @@ def _prepare_image_for_save(image: Image.Image, save_format: str) -> Image.Image
 
 
 def register_all_processors() -> None:
-    """Automatically discover and register all processor plugin classes in the processors directory.
+    """Automatically discover and register all processor plugin classes.
 
-    This function scans all modules under the image_splitter.processors package,
-    and instantiates all non-abstract classes that inherit from BaseProcessor.
+    Scans both the built-in processors/ package and the user plugins/
+    directory. All non-abstract BaseProcessor subclasses are instantiated
+    and registered.
     """
     import image_splitter.processors as processors
     pkg_path = Path(processors.__file__).parent
-    
+
     # Clear and reset to ensure no state residue
     ProcessorRegistry.reset()
-    
-    # Iterate through all modules in the processors package
-    for _, modname, _ in pkgutil.walk_packages([str(pkg_path)], processors.__name__ + "."):
+
+    # Scan built-in processors package
+    _scan_package(pkg_path, processors.__name__)
+
+    # Scan user plugins directory
+    plugins_path = Path(__file__).parent / "plugins"
+    if plugins_path.is_dir():
+        plugin_init = plugins_path / "__init__.py"
+        if plugin_init.exists():
+            _scan_package(plugins_path, "image_splitter.plugins")
+
+    # If all failed, at least register the grid_splitter as fallback
+    if not ProcessorRegistry.list_all():
+        logger.warning("No processors found — registering fallback grid_splitter")
+
+
+def _scan_package(pkg_path: Path, prefix: str) -> None:
+    """Scan a package directory for BaseProcessor subclasses and register them.
+
+    Args:
+        pkg_path: Path to the package directory.
+        prefix: Python module prefix (e.g., 'image_splitter.processors').
+    """
+    for _, modname, _ in pkgutil.walk_packages([str(pkg_path)], prefix + "."):
         try:
-            # Dynamically import/reload modules
             if modname in sys.modules:
                 module = importlib.reload(sys.modules[modname])
             else:
                 module = importlib.import_module(modname)
-            
-            # Find non-abstract subclasses of BaseProcessor defined in the module
+
             for attr in dir(module):
                 obj = getattr(module, attr)
-                if (isinstance(obj, type) and 
-                    issubclass(obj, BaseProcessor) and 
-                    obj is not BaseProcessor):
-                    
-                    # Instantiate and register
+                if (isinstance(obj, type)
+                        and issubclass(obj, BaseProcessor)
+                        and obj is not BaseProcessor):
                     try:
                         instance = obj()
                         ProcessorRegistry.register(instance)
                     except TypeError:
                         continue
         except Exception as e:
-            logger.error("Failed to load module %s: %s", modname, e)
+            logger.debug("Failed to load module %s: %s", modname, e)
 
 
 def process_image(
@@ -121,6 +138,9 @@ def process_image(
             processor.config_model(**model_input)
 
         with Image.open(img_p) as orig_img:
+            # Preserve metadata from original image before processing
+            orig_icc_profile = orig_img.info.get('icc_profile')
+            
             # 2. Image processing
             processed_items = processor.process(orig_img, config_dict)
             
@@ -170,7 +190,7 @@ def process_image(
                     save_args = {"format": save_fmt}
                     if save_fmt in ('JPEG', 'WEBP'):
                         save_args["quality"] = int(context.get('quality', 95))
-                    icc_profile = cell.info.get('icc_profile')
+                    icc_profile = context.get('icc_profile') or cell.info.get('icc_profile') or orig_icc_profile
                     if icc_profile:
                         save_args['icc_profile'] = icc_profile
                         

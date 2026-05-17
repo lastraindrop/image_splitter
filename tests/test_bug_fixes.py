@@ -159,6 +159,168 @@ class TestBugFixes(unittest.TestCase):
                 success, msg = process_image(str(self.rgba_path), "text_watermark", config)
                 self.assertTrue(success, f"Anchor {anchor} failed: {msg}")
 
+    def test_bug13_keymap_uses_tkinter_format(self):
+        """BUG-13: DEFAULT_KEYMAP must use tkinter-compatible key sequences."""
+        from image_splitter.keymap import DEFAULT_KEYMAP
+        global_binds = DEFAULT_KEYMAP.get("global", {})
+        for key_seq in global_binds:
+            self.assertFalse(
+                key_seq.startswith("<Ctrl-"),
+                f"Key '{key_seq}' uses <Ctrl-> format; "
+                f"tkinter expects <Control-> format"
+            )
+        self.assertIn("<Control-o>", global_binds)
+        self.assertIn("<Control-Return>", global_binds)
+        self.assertIn("<Delete>", global_binds)
+
+    def test_bug14_delete_keybind_does_not_override_keymap(self):
+        """BUG-14: <Delete> must be bound on file_listbox, not root."""
+        import tkinter as tk
+        from unittest.mock import MagicMock, patch
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            from image_splitter.gui import ImageSplitterApp
+            app = ImageSplitterApp(root)
+            root_binds = root.bind()
+            root_delete_binds = [
+                b for b in root_binds if b == "<Delete>"
+            ]
+            self.assertEqual(
+                len(root_delete_binds), 0,
+                "root should not have a direct <Delete> binding; "
+                "it should only be on file_listbox via keymap"
+            )
+        finally:
+            root.destroy()
+
+    def test_bug15_on_file_selected_opens_image_once(self):
+        """BUG-15: _on_file_selected should only open image once."""
+        import tkinter as tk
+        from unittest.mock import patch, MagicMock
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            from image_splitter.gui import ImageSplitterApp
+            app = ImageSplitterApp(root)
+            app.current_files = [str(self.img_path)]
+            app.file_listbox.insert(tk.END, self.img_path.name)
+            app.file_listbox.selection_set(0)
+            with patch("image_splitter.gui.Image.open") as mock_open:
+                mock_img = MagicMock()
+                mock_img.__enter__ = MagicMock(return_value=mock_img)
+                mock_img.__exit__ = MagicMock(return_value=False)
+                mock_img.size = (100, 100)
+                mock_img.convert.return_value = mock_img
+                mock_img.thumbnail = MagicMock()
+                app._on_file_selected()
+                self.assertEqual(mock_open.call_count, 1,
+                                 "Image.open should be called exactly once")
+        finally:
+            root.destroy()
+
+    def test_bug16_icc_profile_preserved_after_crop(self):
+        """BUG-16: ICC profile must survive through crop/split operations."""
+        import io
+        rgb_img = Image.new("RGB", (200, 200), "red")
+        fake_icc = b"FAKE_ICC_PROFILE_DATA"
+        rgb_img.info["icc_profile"] = fake_icc
+        ico_path = self.test_dir / "icc_test.png"
+        rgb_img.save(ico_path, icc_profile=fake_icc)
+
+        out_sub = self.output_dir / "icc_split"
+        out_sub.mkdir(exist_ok=True)
+        config = {
+            "rows": 2,
+            "cols": 2,
+            "output_dir": str(out_sub),
+            "template": "{filename}_{row}_{col}",
+        }
+        success, msg = process_image(str(ico_path), "grid_splitter", config)
+        self.assertTrue(success, msg)
+        saved_files = list(out_sub.glob("*.png"))
+        self.assertGreater(len(saved_files), 0)
+        for f in saved_files:
+            with Image.open(f) as result:
+                self.assertIn("icc_profile", result.info,
+                              f"ICC profile lost in {f.name}")
+
+    def test_bug17_script_engine_output_collection(self):
+        """BUG-17: script_engine.process must collect only new output files."""
+        from image_splitter.script_engine import ScriptEngine
+        engine = ScriptEngine()
+        result = engine.process(
+            [str(self.img_path)],
+            "grid_splitter",
+            {"rows": 2, "cols": 2, "output_dir": str(self.output_dir)}
+        )
+        self.assertTrue(result.success)
+        self.assertGreater(len(result.output_files), 0,
+                           "Output files should be collected")
+        for f in result.output_files:
+            self.assertTrue(f.exists(), f"Output file {f} should exist")
+
+    def test_bug18_keymap_imports_settings_config_dir(self):
+        """BUG-18: keymap should reuse settings.get_config_dir()."""
+        from image_splitter import keymap, settings
+        km_dir = keymap.get_config_dir()
+        s_dir = settings.get_config_dir()
+        self.assertEqual(km_dir, s_dir)
+
+    def test_bug19_geometry_config_validates_angle(self):
+        """GeometryConfig must reject invalid rotation angles."""
+        from image_splitter.models import GeometryConfig
+        with self.assertRaises(ValueError):
+            GeometryConfig(rotate=45)
+        with self.assertRaises(ValueError):
+            GeometryConfig(rotate=-90)
+        config = GeometryConfig(rotate=90)
+        self.assertEqual(config.rotate, 90)
+
+    def test_bug19_format_config_validates_format(self):
+        """FormatConfig must reject unsupported formats and invalid quality."""
+        from image_splitter.models import FormatConfig
+        with self.assertRaises(ValueError):
+            FormatConfig(format="TIFF")
+        with self.assertRaises(ValueError):
+            FormatConfig(quality=0)
+        with self.assertRaises(ValueError):
+            FormatConfig(quality=101)
+        config = FormatConfig(format="WebP", quality=80)
+        self.assertEqual(config.format, "WebP")
+
+    def test_bug19_watermark_config_validates_params(self):
+        """WatermarkConfig must validate size, opacity, and anchor."""
+        from image_splitter.models import WatermarkConfig
+        with self.assertRaises(ValueError):
+            WatermarkConfig(size=0)
+        with self.assertRaises(ValueError):
+            WatermarkConfig(opacity=256)
+        with self.assertRaises(ValueError):
+            WatermarkConfig(anchor="XX")
+        config = WatermarkConfig(text="test", size=20, opacity=128, anchor="TL")
+        self.assertEqual(config.anchor, "TL")
+
+    def test_bug20_prepare_image_for_save_handles_bmp(self):
+        """_prepare_image_for_save must flatten transparency for BMP format."""
+        from image_splitter.core import _prepare_image_for_save
+        rgba = Image.new("RGBA", (10, 10), (255, 0, 0, 128))
+        result = _prepare_image_for_save(rgba, "BMP")
+        self.assertEqual(result.mode, "RGB")
+
+    def test_bug21_logging_not_configured_on_import(self):
+        """Importing image_splitter must not configure logging as side effect."""
+        import importlib
+        import image_splitter
+        import logging
+        root_logger = logging.getLogger()
+        handlers_before = len(root_logger.handlers)
+        importlib.reload(image_splitter)
+        root_logger_after = logging.getLogger()
+        handlers_after = len(root_logger_after.handlers)
+        self.assertEqual(handlers_before, handlers_after,
+                         "Importing should not add log handlers")
+
 
 if __name__ == "__main__":
     unittest.main()

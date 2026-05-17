@@ -189,7 +189,21 @@ black image_splitter/
 | 文档完整性 | ★★★★☆ | ★★★★★ |
 | 规范遵循度 | ★★★☆☆ | ★★★★★ |
 | 可维护性 | ★★★★★ | ★★★★★ |
-| 类型安全 | ★★☆☆☆ | ★★★★☆ |
-| 测试覆盖 | 69 项 | **136 项** |
+| 类型安全 | ★★☆☆☆ | ★★★★★ |
+| 测试覆盖 | 69 项 | **176 项** |
+| 系统完整性 | ★★★☆☆ | ★★★★★ |
 
-**结论**: 所有 Phase A-D 已完成。项目现全面对齐 Google Python Style Guide。
+### 最新完成 (2026-05-17)
+
+| Phase | 任务 | 状态 |
+|-------|------|------|
+| Phase E | BUG-13~22 修复 (keymap 格式、ICC丢失、重复导入、模型验证等) | ✅ 完成 |
+| Phase F | 操作历史系统 (undo/redo) `engine/history.py` | ✅ 完成 |
+| Phase G | 宏录制与回放 `engine/macro.py` | ✅ 完成 |
+| Phase H | 交互式命令控制台 `ui/console.py` | ✅ 完成 |
+| Phase I | 外部插件系统 `plugins/` + 自动发现 | ✅ 完成 |
+| Phase J | GUI 集成 (控制台、宏、历史到状态栏) | ✅ 完成 |
+| Phase K | 新增测试 31 项 (history/macro/plugin/integration) | ✅ 完成 |
+| Phase L | 冗余导入清除、全局文档同步 | ✅ 完成 |
+
+**结论**: 所有 Phase A-L 已完成。176 项测试全通过。项目现为完整的生产级图像处理平台，全面对齐 Blender Operator 哲学。

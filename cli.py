@@ -1,4 +1,3 @@
-# image_splitter/cli.py
 """Command-line interface for Image Splitter Pro."""
 import argparse
 import glob
@@ -19,6 +18,7 @@ from image_splitter import script_engine, settings
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.registry import ProcessorRegistry
+from image_splitter.logging_config import setup_default_logging
 
 
 def _positive_int(value: str) -> int:
@@ -42,6 +42,7 @@ def _parse_set_option(raw: str) -> Tuple[str, str]:
 
 def main() -> None:
     """CLI entry point: parse arguments and dispatch processing."""
+    setup_default_logging()
     # Load settings
     loaded_settings = settings.load_settings()
 

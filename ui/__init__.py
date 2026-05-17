@@ -1,1 +1,1 @@
-"""UI components package placeholder for future expansion."""
+"""UI components package for Image Splitter Pro GUI."""

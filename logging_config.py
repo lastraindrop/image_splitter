@@ -1,4 +1,3 @@
-# image_splitter/logging_config.py
 """Unified logging configuration module."""
 import logging
 import sys

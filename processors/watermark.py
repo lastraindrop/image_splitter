@@ -1,5 +1,4 @@
 """Text watermark processor for adding semi-transparent labels to images."""
-# image_splitter/processors/watermark.py
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image, ImageDraw, ImageFont

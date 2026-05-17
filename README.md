@@ -7,10 +7,12 @@ A lightweight, modular image processing framework with Blender-like operator phi
 ### Core Philosophy
 - **Everything as Operators**: Complete decoupling between core logic and UI. Supports Blender-style operator invocation logs and command dispatching.
 - **Metadata-Driven UI**: GUI automatically generates parameter panels based on processor metadata. Adding new features only requires implementing a plugin.
+- **Operation History**: Undo/Redo stack records every operation, exportable as JSON log.
+- **Macro Recording**: One-click recording generates reusable Python scripts.
+- **Interactive Console**: Built-in command console with tab completion and history.
+- **Plugin System**: Drop a `BaseProcessor` subclass in `plugins/` and it's auto-discovered.
 - **High-Performance Engine**: CLI version uses multi-processing by default, delivering 4-8x performance improvement.
 - **Industrial-Grade Safety**: Strict Pillow handle management with Path Traversal interception.
-- **Custom Line Cutting**: Supports arbitrary pixel positions for horizontal/vertical splitting.
-- **Advanced Canvas Adjustment**: Support for padding, cropping, and custom background colors.
 
 ## Quick Start
 
@@ -97,11 +99,23 @@ Default keybindings are stored in `~/.image_splitter/keymap.json`:
 {
     "global": {
         "<Control-o>": "select_files",
-        "<Control-Enter>": "run_batch",
+        "<Control-Return>": "run_batch",
         "<Delete>": "remove_selected"
     }
 }
 ```
+
+Built-in shortcuts (always available):
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+O` | Open images |
+| `Ctrl+Enter` | Run batch processing |
+| `Delete` | Remove selected file |
+| `Ctrl+Shift+R` | Start/stop macro recording |
+| `Ctrl+Z` | Undo last operation |
+| `Ctrl+Shift+Z` | Redo last operation |
+| `` Ctrl+` `` | Toggle command console |
 
 ## Development
 
@@ -120,17 +134,22 @@ image_splitter/
 ├── keymap.py               # Keybinding system
 ├── script_engine.py         # Batch scripting engine
 ├── logging_config.py       # Logging configuration
-
 ├── models.py               # Configuration dataclasses
 ├── pyproject.toml         # Package configuration
 ├── engine/
 │   ├── base.py             # BaseProcessor/BaseConfig abstract classes
 │   ├── registry.py         # Processor registration center
 │   ├── dispatcher.py       # Command dispatcher for chaining
-│   └── config_coercion.py  # Parameter type coercion
-├── processors/             # Processor plugins (10 total)
+│   ├── config_coercion.py  # Parameter type coercion
+│   ├── history.py          # Operation history stack (undo/redo)
+│   └── macro.py            # Macro recording & playback
+├── processors/             # Processor plugins (10 built-in)
+├── plugins/                # User plugin directory (auto-discovered)
+│   └── example_plugin.py   # Example: invert colors plugin
 ├── ui/
-└── tests/                 # Test suite (136 tests)
+│   ├── __init__.py
+│   └── console.py          # Interactive command console panel
+└── tests/                 # Test suite (176 tests)
 ```
 
 ## Requirements
@@ -144,12 +163,12 @@ MIT
 
 ## Test Suite
 
-The project includes 136 tests across 21 test files:
+The project includes 176 tests across 23 test files:
 
 | Test File | Description |
 |-----------|-------------|
 | `test_adjuster.py` | Canvas adjuster: padding, cropping, ratio, fail-fast validation |
-| `test_bug_fixes.py` | Regression tests for all confirmed bug fixes |
+| `test_bug_fixes.py` | Regression tests for all confirmed bug fixes (21 tests) |
 | `test_cli.py` | CLI mode: basic flow, recursive discovery, concurrency, error handling |
 | `test_config_coercion.py` | Parameter type coercion for all supported types |
 | `test_custom_splitter.py` | Custom line splitter: simple, irregular, out-of-bounds, negative rejection |
@@ -160,10 +179,13 @@ The project includes 136 tests across 21 test files:
 | `test_error_paths.py` | Error handling: missing files, invalid templates, bad enum/list values |
 | `test_gui_smoke.py` | GUI initialization, file selection, processor switching, stop/cancel |
 | `test_gui_workflows.py` | GUI workflow: full parameter coercion and batch run verification |
+| `test_history.py` | History system: push, undo, redo, clear, max-depth, export log |
 | `test_integration.py` | End-to-end: full pipeline, RGBA/L-mode smoke, CLI chain, template vars |
 | `test_keymap.py` | Keybinding: bind/unbind/lookup, import/export, reset, multiple contexts |
+| `test_macro.py` | Macro recording: record, stop, generate script, playback, save |
 | `test_operator_compliance.py` | Compliance audit: naming, metadata schema, category, GUI addressability |
 | `test_parameter_contract.py` | Parameter contract: metadata completeness, coercion type matching |
+| `test_plugin.py` | Plugin system: auto-discovery, example plugin metadata, processing |
 | `test_processors_expanded.py` | Deep: rounding consistency, watermark positioning, pixel accuracy, stress test |
 | `test_save_compatibility.py` | Save: ICC profile preservation, format conversion extension changes |
 | `test_script_engine.py` | Script engine: process, chain, batch script, error handling, operators list |

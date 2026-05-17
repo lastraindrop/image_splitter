@@ -12,19 +12,23 @@ image_splitter/
 │   ├── base.py           # Abstract base classes
 │   ├── registry.py       # Plugin registration center
 │   ├── dispatcher.py   # Command parsing and chaining
-│   └── config_coercion.py  # Parameter type coercion
-├── processors/           # Processor plugins (10 total)
-├── core.py              # Processing pipeline
+│   ├── config_coercion.py  # Parameter type coercion
+│   ├── history.py        # Operation history (undo/redo)
+│   └── macro.py          # Macro recording & playback
+├── processors/           # Processor plugins (10 built-in)
+├── plugins/              # User plugin directory
+│   └── example_plugin.py # Example: invert colors
+├── core.py              # Processing pipeline + auto-discovery
 ├── cli.py               # CLI entry point
-├── gui.py               # GUI entry point
+├── gui.py               # GUI entry point (history/macro/console)
 ├── settings.py          # User settings persistence
 ├── keymap.py           # Keybinding system
+├── script_engine.py    # Batch scripting engine
 ├── logging_config.py    # Logging configuration
-
 ├── models.py             # Configuration models
-├── script_engine.py     # Batch scripting engine
 ├── ui/                  # UI components
-├── tests/               # Test suite (136 tests)
+│   └── console.py       # Interactive command console
+├── tests/               # Test suite (176 tests)
 └── pyproject.toml      # Package configuration
 ```
 
@@ -166,7 +170,9 @@ class MyCustomConfig:
 
 ### Step 3: The Processor is Auto-Discovered
 
-Run `register_all_processors()` - it automatically scans and loads all processors in the `processors/` directory. No manual registration needed.
+Run `register_all_processors()` - it automatically scans and loads all processors
+in both the `processors/` package and the `plugins/` directory. No manual
+registration needed. User plugins are first-class citizens equal to built-in processors.
 
 ## Parameter Consistency Protocol
 
@@ -205,6 +211,62 @@ python -m pytest tests/ --cov=image_splitter
 - Integration tests (end-to-end pipeline, script engine, CLI chain mode)
 - Keymap persistence (bind/unbind, save/load, reset)
 - Settings persistence (round-trip, merge with defaults, corrupt JSON resilience)
+- History system (push, undo, redo, max-depth eviction, JSON export)
+- Macro system (record, stop, generate script, playback, save)
+- Plugin auto-discovery (external directory scanning, equality with built-in)
+- Console interaction (command input, tab completion, history navigation)
+
+## New Systems (v7.0)
+
+### Operation History
+
+```python
+from image_splitter.engine.history import HistoryManager, HistoryEntry
+import time
+
+history = HistoryManager(max_depth=50)
+history.push(HistoryEntry(
+    timestamp=time.time(),
+    operator_name="grid_splitter",
+    config_snapshot={"rows": 3, "cols": 3},
+    input_files=["image.png"],
+    description="Grid split 3x3",
+))
+# Undo surfaces parameters for inspection
+entry = history.undo()
+# Redo replays the operation
+history.redo()
+# Export to JSON
+history.export_log("history.json")
+```
+
+### Macro Recording
+
+```python
+from image_splitter.engine.macro import MacroRecorder, MacroPlayer
+
+recorder = MacroRecorder()
+recorder.start()
+recorder.record("grid_splitter", {"rows": 3, "cols": 2})
+recorder.record("resizer", {"width": 0.5, "height": 0.5})
+script = recorder.stop()  # Returns executable Python script
+recorder.save("my_macro.py")
+
+# Replay
+result = MacroPlayer.play("my_macro.py", ["input.png"], "./output")
+```
+
+### Console (GUI)
+
+The console panel supports:
+- Direct operator invocation: `grid_splitter rows=3 cols=2`
+- Chain commands: `resizer width=0.5 | grid_splitter rows=2 cols=2`
+- Command history (Up/Down arrows)
+- Tab completion for operator names
+
+### Plugin System
+
+Create a file in `plugins/` with a `BaseProcessor` subclass — it's auto-discovered on startup. See `plugins/example_plugin.py` for a complete example.
 
 ## Logging
 
@@ -239,19 +301,18 @@ def save_output(image: Image.Image, output_dir: str, filename: str) -> Path:
 
 ### Completed
 - [x] **V4.0 Architecture**: Fully decoupled plugin auto-discovery
-- [x] **Feature Library**: 10+ core modules (geometry, filters, watermark, etc.)
+- [x] **Feature Library**: 10 core processors + 1 plugin example
 - [x] **Compliance Testing**: Automated plugin protocol detection
 - [x] **UI Enhancement**: Adaptive controls with type validation
 - [x] **V5.5 Refactor**: Google Python Style compliance
-- [x] **V6.0 Hardening**: Full Google Python Style compliance audit and fix
-- [x] **Bug Fixes**: 10 bugs fixed (watermark return, CLI undefined var, script engine save, geometry cleanup)
-- [x] **Test Expansion**: 67 new tests (total 136), including integration, settings, keymap, edge cases
-- [x] **Type Annotations**: All methods annotated across gui.py(28), models.py(8), processors(6), cli.py(3)
+- [x] **V6.0 Hardening**: Full Google Python Style audit, 22 bug fixes
+- [x] **V7.0 Blender Systems**: Operation history (undo/redo), macro recording/playback, interactive console, plugin system
+- [x] **Test Suite**: 176 tests across 23 files, 100% pass rate
 
 ### Short-Term Goals
 - [ ] **Static Type Checking**: Integrate mypy for full type scanning
 - [ ] **Visual Pipeline Editor**: Drag-and-drop processor cards in GUI
-- [ ] **Macro Console**: Real-time operation recording
+- [ ] **CI/CD Pipeline**: Automated testing with GitHub Actions
 
 ### Long-Term Goals
 - [ ] **Distributed Processing**: RPC-based multi-node rendering

@@ -1,4 +1,3 @@
-# image_splitter/engine/base.py
 """Base classes and interfaces for the image processing engine."""
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple

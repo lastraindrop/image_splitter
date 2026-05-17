@@ -1,4 +1,3 @@
-# image_splitter/settings.py
 """Settings system for CLI configuration persistence."""
 import json
 from pathlib import Path

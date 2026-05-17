@@ -1,5 +1,4 @@
 """Geometry transformation processor for image rotation and flipping."""
-# image_splitter/processors/geometry.py
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image

@@ -1,4 +1,3 @@
-# image_splitter/gui.py
 """Graphical user interface for Image Splitter Pro."""
 import logging
 import os
@@ -6,6 +5,7 @@ import platform
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -21,7 +21,12 @@ from PIL import Image, ImageTk
 from image_splitter import keymap, settings
 from image_splitter.core import register_all_processors, batch_process_images
 from image_splitter.engine.config_coercion import coerce_processor_config
+from image_splitter.engine.history import HistoryEntry, HistoryManager
+from image_splitter.engine.macro import MacroRecorder
 from image_splitter.engine.registry import ProcessorRegistry
+from image_splitter.logging_config import setup_default_logging
+from image_splitter.script_engine import ScriptEngine
+from image_splitter.ui.console import ConsolePanel
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +78,7 @@ class ImageSplitterApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Image Splitter Pro")
-        self.root.geometry("1100x750")
+        self.root.geometry("1100x820")
         self.theme = UITheme()
         self.ui_font = _detect_ui_font()
         self.mono_font = _detect_mono_font()
@@ -89,9 +94,16 @@ class ImageSplitterApp:
         self.dynamic_vars = {}
         self._last_output_dir = loaded_settings.get("output_dir", "./output")
 
+        # Blender-aligned core systems
+        self.history = HistoryManager(max_depth=50)
+        self.macro = MacroRecorder()
+        self.script_engine = ScriptEngine()
+
         register_all_processors()
         self._setup_style()
         self._create_widgets()
+        self._create_console_panel()
+        self._create_status_bar()
 
     def _font(self, size: int = 10, bold: bool = False) -> Tuple[str, int, str]:
         weight = "bold" if bold else "normal"
@@ -182,6 +194,9 @@ class ImageSplitterApp:
         self.btn_open_out = ttk.Button(self.bottom_btn_frame, text="Open Output Dir", style="Secondary.TButton", command=self.open_output_dir)
         self.btn_open_out.pack(fill=tk.X, pady=5)
 
+        self.btn_macro = ttk.Button(self.bottom_btn_frame, text="Record Macro (Ctrl+Shift+R)", style="Secondary.TButton", command=self.toggle_macro_record)
+        self.btn_macro.pack(fill=tk.X, pady=5)
+
         self.btn_stop = ttk.Button(self.bottom_btn_frame, text="Abort", state=tk.DISABLED, command=self.stop_tasks)
         self.btn_stop.pack(fill=tk.X, pady=5)
 
@@ -196,7 +211,11 @@ class ImageSplitterApp:
                 except tk.TclError:
                     logger.warning("Invalid key sequence: %s", key_seq)
 
-        self.root.bind("<Delete>", lambda e: self.remove_selected())
+        self.file_listbox.bind("<Delete>", lambda e: self.remove_selected())
+        self.root.bind("<Control-grave>", lambda e: self.toggle_console())
+        self.root.bind("<Control-Shift-R>", lambda e: self.toggle_macro_record())
+        self.root.bind("<Control-z>", lambda e: self.undo_history())
+        self.root.bind("<Control-Shift-Z>", lambda e: self.redo_history())
 
     def _resolve_action(self, action_name: str) -> Optional[Callable]:
         return {
@@ -205,6 +224,8 @@ class ImageSplitterApp:
             "remove_selected": self.remove_selected,
             "open_output_dir": self.open_output_dir,
             "stop_tasks": self.stop_tasks,
+            "toggle_console": self.toggle_console,
+            "toggle_macro": self.toggle_macro_record,
         }.get(action_name)
 
     def _create_right_widgets(self) -> None:
@@ -357,6 +378,10 @@ class ImageSplitterApp:
         processed_config["output_dir"] = output_dir
         processed_config["template"] = self.template_var.get()
 
+        # Macro recording
+        if self.macro.is_recording:
+            self.macro.record(processor.name, dict(processed_config))
+
         self.btn_run.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.stop_event.clear()
@@ -414,7 +439,6 @@ class ImageSplitterApp:
         try:
             with Image.open(image_path) as img:
                 self.current_orig_size = img.size
-            with Image.open(image_path) as img:
                 thumb = img.convert("RGBA")
                 thumb.thumbnail((1200, 1200))
                 self.thumb_img = thumb
@@ -452,18 +476,167 @@ class ImageSplitterApp:
             self.status_label.config(text=f"Aborted: {s}/{total}", foreground=self.theme.DANGER)
         else:
             self.status_label.config(text=f"Done: {s}/{total}", foreground=self.theme.SUCCESS)
+            display_name = self.active_processor_name.get()
+            processor = next((p for p in ProcessorRegistry.list_all()
+                              if p.display_name == display_name), None)
+            if processor:
+                raw_config = {meta["name"]: self.dynamic_vars[meta["name"]].get()
+                              for meta in processor.get_ui_metadata()}
+                self.history.push(HistoryEntry(
+                    timestamp=time.time(),
+                    operator_name=processor.name,
+                    config_snapshot=dict(raw_config),
+                    input_files=list(self.current_files),
+                    description=f"{processor.display_name}: {s}/{total} succeeded",
+                ))
+        self._update_status_indicators()
 
     def on_close(self) -> None:
         if self.btn_run['state'] == tk.DISABLED:
             if not messagebox.askyesno("Exit", "Task is running. Force quit?"):
                 return
             self.stop_event.set()
-        settings.set_setting("output_dir", self._last_output_dir)
-        settings.set_setting("template", self.template_var.get())
+        try:
+            settings.set_setting("output_dir", self._last_output_dir)
+            settings.set_setting("template", self.template_var.get())
+        except Exception:
+            pass
         self.root.destroy()
+
+    # ----------------------------------------------------------------
+    # Console panel
+    # ----------------------------------------------------------------
+    def _create_console_panel(self) -> None:
+        self.console_frame = tk.Frame(self.main_container, bg=self.theme.DARK_BG)
+
+        console_header = tk.Frame(self.console_frame, bg=self.theme.PANEL_BG, height=28)
+        console_header.pack(fill=tk.X)
+        tk.Label(
+            console_header, text="Console (Ctrl+` to toggle)",
+            bg=self.theme.PANEL_BG, fg=self.theme.DIM_FG, font=self._font(9)
+        ).pack(side=tk.LEFT, padx=10)
+
+        self.console = ConsolePanel(
+            self.console_frame,
+            script_engine=self.script_engine,
+            on_execute=self._console_execute,
+            theme=self.theme,
+            font=self._mono(9),
+        )
+        self.console.pack(fill=tk.BOTH, expand=True)
+        self.console.welcome()
+        self.console_frame.pack_forget()
+        self._console_visible = False
+
+    def toggle_console(self) -> None:
+        if self._console_visible:
+            self.console_frame.pack_forget()
+            self._console_visible = False
+        else:
+            self.console_frame.pack(fill=tk.BOTH, expand=False, padx=10, pady=(0, 6))
+            self._console_visible = True
+            self.console.input_entry.focus_set()
+
+    def _console_execute(self, operator: str, config: Dict[str, Any]) -> None:
+        if self.current_files:
+            config["output_dir"] = self._last_output_dir
+            config["template"] = self.template_var.get()
+            for path in self.current_files:
+                from image_splitter.core import process_image
+                process_image(path, operator, config)
+
+    # ----------------------------------------------------------------
+    # Status bar
+    # ----------------------------------------------------------------
+    def _create_status_bar(self) -> None:
+        self.status_frame = tk.Frame(
+            self.status_container, bg=self.theme.DARK_BG, height=24
+        )
+        self.status_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(2, 0))
+
+        self.macro_indicator = tk.Label(
+            self.status_frame,
+            text="● REC" if self.macro.is_recording else "○ REC",
+            font=self._font(9),
+            bg=self.theme.DARK_BG,
+            fg=self.theme.DANGER if self.macro.is_recording else self.theme.DIM_FG,
+        )
+        self.macro_indicator.pack(side=tk.LEFT, padx=(2, 8))
+
+        self.history_indicator = tk.Label(
+            self.status_frame,
+            text=f"Hist: {self.history.undo_depth}",
+            font=self._font(9),
+            bg=self.theme.DARK_BG,
+            fg=self.theme.DIM_FG,
+        )
+        self.history_indicator.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.plugin_count_label = tk.Label(
+            self.status_frame,
+            text=f"Ops: {len(ProcessorRegistry.list_all())}",
+            font=self._font(9),
+            bg=self.theme.DARK_BG,
+            fg=self.theme.DIM_FG,
+        )
+        self.plugin_count_label.pack(side=tk.RIGHT, padx=(0, 10))
+
+    def _update_status_indicators(self) -> None:
+        self.macro_indicator.config(
+            text="● REC" if self.macro.is_recording else "○ REC",
+            fg=self.theme.DANGER if self.macro.is_recording else self.theme.DIM_FG,
+        )
+        self.history_indicator.config(
+            text=f"Hist: {self.history.undo_depth}/{self.history.redo_depth}"
+        )
+
+    # ----------------------------------------------------------------
+    # Macro recording
+    # ----------------------------------------------------------------
+    def toggle_macro_record(self) -> None:
+        if self.macro.is_recording:
+            script = self.macro.stop()
+            if script:
+                macro_dir = Path(self._last_output_dir) / "macros"
+                macro_dir.mkdir(parents=True, exist_ok=True)
+                ts = int(time.time())
+                macro_path = macro_dir / f"macro_{ts}.py"
+                with open(macro_path, "w", encoding="utf-8") as f:
+                    f.write(script)
+                self.console.append_output(
+                    f"Macro saved: {macro_path}\n", "success"
+                )
+        else:
+            self.macro.start()
+            self.console.append_output("[REC] Macro recording started\n", "info")
+        self._update_status_indicators()
+
+    # ----------------------------------------------------------------
+    # Undo / Redo
+    # ----------------------------------------------------------------
+    def undo_history(self) -> None:
+        entry = self.history.undo()
+        if entry:
+            self.console.append_output(
+                f"[UNDO] {entry.operator_name}: {entry.description}\n", "info"
+            )
+        else:
+            self.console.append_output("[UNDO] Nothing to undo\n", "info")
+        self._update_status_indicators()
+
+    def redo_history(self) -> None:
+        entry = self.history.redo()
+        if entry:
+            self.console.append_output(
+                f"[REDO] {entry.operator_name}: {entry.description}\n", "info"
+            )
+        else:
+            self.console.append_output("[REDO] Nothing to redo\n", "info")
+        self._update_status_indicators()
 
 
 def main() -> None:
+    setup_default_logging()
     root = tk.Tk()
     app = ImageSplitterApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)

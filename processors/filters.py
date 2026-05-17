@@ -1,5 +1,4 @@
 """Filter processor for applying visual effects like grayscale and inversion."""
-# image_splitter/processors/filters.py
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image, ImageOps

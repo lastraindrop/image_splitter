@@ -1,5 +1,4 @@
 """Metadata processor for cleaning privacy-sensitive EXIF/GPS information."""
-# image_splitter/processors/metadata.py
 from typing import Any, Dict, List, Tuple, Optional
 
 from PIL import Image

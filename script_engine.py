@@ -1,4 +1,3 @@
-# image_splitter/script_engine.py
 """Simple script engine for batch processing."""
 import os
 from pathlib import Path
@@ -47,14 +46,15 @@ class ScriptEngine:
 
         success_count = 0
         output_files = []
+        out_dir = Path(output_dir)
 
         for path in input_files:
+            before = set(out_dir.glob("*")) if out_dir.exists() else set()
             success, msg = process_image(path, operator, config)
             if success:
                 success_count += 1
-                # Collect output files
-                out_dir = Path(output_dir)
-                output_files.extend(out_dir.glob("*"))
+                after = set(out_dir.glob("*")) if out_dir.exists() else set()
+                output_files.extend(after - before)
 
         return ScriptResult(
             success_count > 0,

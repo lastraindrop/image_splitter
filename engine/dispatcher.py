@@ -1,4 +1,3 @@
-# image_splitter/engine/dispatcher.py
 """Command parsing and chained dispatching for operators."""
 import ast
 

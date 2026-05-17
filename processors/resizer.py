@@ -1,5 +1,4 @@
 """Image resizer processor for scaling image dimensions by ratio."""
-# image_splitter/processors/resizer.py
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image

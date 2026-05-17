@@ -1,5 +1,4 @@
 """Grid splitter processor for dividing images into uniform tiles."""
-# image_splitter/processors/splitter.py
 import ast
 from typing import Any, Dict, List, Tuple
 
