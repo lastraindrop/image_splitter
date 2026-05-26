@@ -1,14 +1,15 @@
 """Tests for UI preview."""
 
 import unittest
+from typing import Any
 
 try:
     import tkinter as tk
     from image_splitter import gui
     _HAS_TK = True
 except ImportError:
-    tk = None
-    gui = None
+    tk = None  # type: ignore[assignment]
+    gui = None  # type: ignore[assignment]
     _HAS_TK = False
 
 from image_splitter.core import register_all_processors

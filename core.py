@@ -79,7 +79,7 @@ def _scan_package(pkg_path: Path, prefix: str) -> None:
     for _, modname, _ in pkgutil.walk_packages([str(pkg_path)], prefix + "."):
         try:
             if modname in sys.modules:
-                module = importlib.reload(sys.modules[modname])
+                module = sys.modules[modname]
             else:
                 module = importlib.import_module(modname)
 
@@ -187,7 +187,7 @@ def process_image(
                 try:
                     save_fmt = ext_map.get(save_path.suffix.lower(), 'PNG')
                     save_image = _prepare_image_for_save(cell, save_fmt)
-                    save_args = {"format": save_fmt}
+                    save_args: dict[str, Any] = {"format": save_fmt}
                     if save_fmt in ('JPEG', 'WEBP'):
                         save_args["quality"] = int(context.get('quality', 95))
                     icc_profile = context.get('icc_profile') or cell.info.get('icc_profile') or orig_icc_profile

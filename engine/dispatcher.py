@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 from PIL import Image
 
+from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.registry import ProcessorRegistry
 
 class CommandDispatcher:
@@ -48,21 +49,26 @@ class CommandDispatcher:
         return ops
 
     @classmethod
-    def execute_chain(cls, image: Image.Image, cmd_str: str) -> List[Image.Image]:
+    def execute_chain(
+        cls,
+        image: Image.Image,
+        cmd_str: str,
+        extra_config: Dict[str, Any] | None = None,
+    ) -> List[Image.Image]:
         if not ProcessorRegistry.list_all():
             from image_splitter.core import register_all_processors
             register_all_processors()
 
         ops = cls.parse_command(cmd_str)
         current_images = [image]
+        extra = extra_config or {}
         
         try:
             for op_name, props in ops:
                 processor = ProcessorRegistry.get(op_name)
                 
-                # Clean types and fill default values for parameters
-                from image_splitter.engine.config_coercion import coerce_processor_config
-                coerced_props = coerce_processor_config(processor, props)
+                props_with_extra = {**extra, **props}
+                coerced_props = coerce_processor_config(processor, props_with_extra)
                 
                 next_step_images = []
                 for img in current_images:
@@ -71,14 +77,12 @@ class CommandDispatcher:
                         for res_img, _ in results:
                             next_step_images.append(res_img)
                     finally:
-                        # Close intermediate images, but never the original input image
                         if img != image:
                             img.close()
                 
                 current_images = next_step_images
             return current_images
         except Exception:
-            # If an error occurs, clean up any intermediate images we are currently holding
             for img in current_images:
                 if img != image:
                     try:

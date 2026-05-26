@@ -87,6 +87,8 @@ class MetadataProcessor(BaseProcessor):
         try:
             def get_val(key):
                 v = props.get(key)
+                if v is None:
+                    return None
                 return v.get() if hasattr(v, 'get') else v
 
             active = get_val("strip_all")

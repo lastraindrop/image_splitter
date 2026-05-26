@@ -84,6 +84,8 @@ class CustomLineSplitter(BaseProcessor):
         try:
             def get_val(key):
                 v = props.get(key)
+                if v is None:
+                    return None
                 return v.get() if hasattr(v, 'get') else v
 
             h_lines = get_val("h_lines")

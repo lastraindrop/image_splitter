@@ -2,7 +2,18 @@
 
 from .core import process_image, split_image_core, batch_process_images
 from .logging_config import configure_logging, get_logger, setup_default_logging
-from .models import SplitConfig, AdjustConfig, CustomSplitConfig, ResizeConfig
+from .models import (
+    SplitConfig,
+    AdjustConfig,
+    CustomSplitConfig,
+    ResizeConfig,
+    ColorConfig,
+    FilterConfig,
+    FormatConfig,
+    GeometryConfig,
+    MetadataConfig,
+    WatermarkConfig,
+)
 
 __all__ = [
     "process_image",
@@ -12,6 +23,12 @@ __all__ = [
     "AdjustConfig",
     "CustomSplitConfig",
     "ResizeConfig",
+    "ColorConfig",
+    "FilterConfig",
+    "FormatConfig",
+    "GeometryConfig",
+    "MetadataConfig",
+    "WatermarkConfig",
     "configure_logging",
     "get_logger",
     "setup_default_logging",

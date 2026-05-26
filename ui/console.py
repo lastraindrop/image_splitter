@@ -102,7 +102,7 @@ class ConsolePanel(ttk.Frame):
         self.input_entry.bind("<Down>", self._history_down)
         self.input_entry.bind("<Tab>", self._tab_complete)
 
-    def _on_enter(self, _event: tk.Event = None) -> None:
+    def _on_enter(self, _event: Optional[tk.Event] = None) -> None:
         cmd = self.input_entry.get().strip()
         if not cmd:
             return
@@ -142,7 +142,7 @@ class ConsolePanel(ttk.Frame):
         except Exception as e:
             self.append_output(f"[ERROR] {e}\n", "error")
 
-    def _history_up(self, _event: tk.Event = None) -> None:
+    def _history_up(self, _event: Optional[tk.Event] = None) -> None:
         if not self._history:
             return
         if self._history_index > 0:
@@ -150,7 +150,7 @@ class ConsolePanel(ttk.Frame):
             self.input_entry.delete(0, tk.END)
             self.input_entry.insert(0, self._history[self._history_index])
 
-    def _history_down(self, _event: tk.Event = None) -> None:
+    def _history_down(self, _event: Optional[tk.Event] = None) -> None:
         if self._history_index < len(self._history) - 1:
             self._history_index += 1
             self.input_entry.delete(0, tk.END)
@@ -159,7 +159,7 @@ class ConsolePanel(ttk.Frame):
             self._history_index = len(self._history)
             self.input_entry.delete(0, tk.END)
 
-    def _tab_complete(self, _event: tk.Event = None) -> str:
+    def _tab_complete(self, _event: Optional[tk.Event] = None) -> str:
         current = self.input_entry.get()
         if " " in current:
             return "break"

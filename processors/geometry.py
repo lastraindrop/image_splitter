@@ -83,6 +83,8 @@ class GeometryProcessor(BaseProcessor):
         try:
             def get_val(key: str) -> Any:
                 v = props.get(key)
+                if v is None:
+                    return None
                 return v.get() if hasattr(v, 'get') else v
 
             angle = int(get_val("rotate") or 0)

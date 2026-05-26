@@ -8,14 +8,14 @@ from unittest.mock import patch
 try:
     import tkinter as tk
 except ImportError:
-    tk = None
+    tk = None  # type: ignore[assignment]
 
 from PIL import Image
 
 try:
     from image_splitter import gui
 except ImportError:
-    gui = None
+    gui = None  # type: ignore[assignment]
 
 @unittest.skipIf(tk is None, "Tkinter is not available")
 class TestGuiWorkflows(unittest.TestCase):

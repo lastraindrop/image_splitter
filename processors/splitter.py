@@ -97,7 +97,8 @@ class GridSplitter(BaseProcessor):
     ) -> None:
         try:
             def get_val(key, default=0):
-                val = props.get(key).get().strip()
+                v = props.get(key)
+                val = v.get().strip() if v is not None else ""
                 try: 
                     return ast.literal_eval(val) if val else default
                 except Exception: 

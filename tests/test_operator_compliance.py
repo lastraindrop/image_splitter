@@ -1,85 +1,92 @@
-"""Tests for operator compliance."""
+"""Operator compliance and parameter contract verification.
 
-import unittest
-
-from image_splitter.core import register_all_processors
+Ensures all processors meet the metadata protocol, have valid categories,
+consistent naming, and that every parameter is coercible from defaults.
+"""
+from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.registry import ProcessorRegistry
 
-class TestOperatorCompliance(unittest.TestCase):
-    """
-    Operator Compliance Audit (Blender-like Operator Compliance)
-    The purpose is to enforce software engineering specifications through automated means, 
-    ensuring the certainty of dynamic UI rendering and script calls.
-    """
+from .conftest import BaseTest
 
-    @classmethod
-    def setUpClass(cls):
-        # Force update and scan all plugins
-        register_all_processors()
+VALID_TYPES = {"int", "float", "bool", "str", "list", "enum"}
+VALID_CATEGORIES = {"Split", "Transform", "Edit", "Filter", "Export"}
 
-    def test_registry_not_empty(self):
-        """Core Check: The registry must contain discovered processors"""
-        processors = ProcessorRegistry.list_all()
-        self.assertGreater(len(processors), 0, "No processors found in the registry!")
 
-    def test_naming_and_display_consistency(self):
-        """Consistency Check: Each operator must have a unique name and display name"""
-        names = set()
-        display_names = set()
+class TestOperatorCompliance(BaseTest):
+    """Blender-like operator compliance audit — ensures every processor
+    is GUI-addressable, script-invokable, and metadata-complete."""
+
+    def test_registry_not_empty(self) -> None:
+        self.assertGreater(len(ProcessorRegistry.list_all()), 0)
+
+    def test_naming_and_display_consistency(self) -> None:
+        names: set[str] = set()
+        display_names: set[str] = set()
         for p in ProcessorRegistry.list_all():
             with self.subTest(processor=p.name):
-                # 1. Check physical name format (snake_case)
-                self.assertTrue(p.name.islower(), f"Operator ID '{p.name}' should be snake_case")
-                self.assertNotIn(" ", p.name, f"Operator ID '{p.name}' contains spaces")
-                
-                # 2. Uniqueness check
-                self.assertNotIn(p.name, names, f"Duplicate Operator ID found: {p.name}")
-                self.assertNotIn(p.display_name, display_names, f"Duplicate Display Name found: {p.display_name}")
-                
+                self.assertTrue(p.name.islower(), f"{p.name} must be snake_case")
+                self.assertNotIn(" ", p.name, f"{p.name} must not contain spaces")
+                self.assertNotIn(p.name, names, f"Duplicate name: {p.name}")
+                self.assertNotIn(p.display_name, display_names,
+                                 f"Duplicate display_name: {p.display_name}")
                 names.add(p.name)
                 display_names.add(p.display_name)
 
-    def test_ui_metadata_schema(self):
-        """Metadata Protocol Check: Verify the completeness of all UI parameter definitions"""
-        valid_types = {"int", "float", "bool", "str", "list", "enum"}
-        
+    def test_ui_metadata_schema(self) -> None:
         for p in ProcessorRegistry.list_all():
             metadata = p.get_ui_metadata()
             with self.subTest(processor=p.name):
-                # Check if get_ui_metadata exists but is in the wrong format
-                self.assertIsInstance(metadata, list, f"Metadata of {p.name} must be a list")
-                
+                self.assertIsInstance(metadata, list)
                 for field in metadata:
-                    # Mandatory fields
-                    self.assertIn("name", field, f"Field in {p.name} missing 'name'")
-                    self.assertIn("label", field, f"Field in {p.name} missing 'label'")
-                    self.assertIn("default", field, f"Field in {p.name} missing 'default'")
-                    
-                    # Strong validation: type must be explicitly defined
-                    self.assertIn("type", field, f"Field '{field['name']}' in {p.name} missing 'type' (required for UI rendering)")
-                    self.assertIn(field["type"], valid_types, f"Unsupported type '{field['type']}' in {p.name}")
+                    for key in ("name", "label", "default", "type"):
+                        self.assertIn(key, field,
+                                      f"{p.name} field missing '{key}'")
+                    self.assertIn(field["type"], VALID_TYPES,
+                                  f"{p.name} invalid type: {field['type']}")
 
-    def test_all_processors_are_gui_addressable(self):
-        """Under the dynamic UI architecture, each processor should provide editable parameter metadata"""
+    def test_all_processors_are_gui_addressable(self) -> None:
         for p in ProcessorRegistry.list_all():
             with self.subTest(processor=p.name):
-                self.assertGreater(len(p.get_ui_metadata()), 0, f"{p.name} lacks GUI metadata and cannot be configured in the dynamic interface")
+                self.assertGreater(len(p.get_ui_metadata()), 0)
 
-    def test_documentation_completeness(self):
-        """Documentation Indicator: Verify if there are operation tips, which is an essential element of professional software"""
+    def test_documentation_completeness(self) -> None:
         for p in ProcessorRegistry.list_all():
             with self.subTest(processor=p.name):
-                # Although tool_tip can be empty, in a professional architecture, it is recommended to have at least 5 characters of description
-                self.assertTrue(hasattr(p, 'tool_tip'), f"{p.name} missing 'tool_tip' property")
-                # Even if it is allowed to be empty, we record a warning (here as an assert check)
-                # self.assertGreater(len(p.tool_tip), 0, f"Operator {p.name} should have a description in tool_tip")
+                self.assertTrue(hasattr(p, 'tool_tip'))
 
-    def test_category_membership(self):
-        """Category Consistency: Verify if the category belongs to a predefined set"""
-        valid_categories = {"Split", "Transform", "Edit", "Filter", "Export"}
+    def test_category_membership(self) -> None:
         for p in ProcessorRegistry.list_all():
-             with self.subTest(processor=p.name):
-                 self.assertIn(p.category, valid_categories, f"{p.name} has invalid category: {p.category}")
+            with self.subTest(processor=p.name):
+                self.assertIn(p.category, VALID_CATEGORIES,
+                              f"{p.name} category '{p.category}' invalid")
+
+    # ----------------------------------------------------------------
+    # Parameter contract: every param must be coercible from defaults
+    # ----------------------------------------------------------------
+    TYPE_MAP = {"int": int, "float": float, "bool": bool,
+                "list": list, "enum": str, "str": str}
+
+    def test_metadata_has_name_type_and_default(self) -> None:
+        for p in ProcessorRegistry.list_all():
+            for field in p.get_ui_metadata():
+                with self.subTest(proc=p.name, field=field.get("name", "?")):
+                    self.assertIn("name", field)
+                    self.assertIn("type", field)
+                    self.assertIn("default", field)
+
+    def test_coercion_with_defaults_produces_correct_types(self) -> None:
+        for p in ProcessorRegistry.list_all():
+            with self.subTest(processor=p.name):
+                coerced = coerce_processor_config(p, {})
+                for field in p.get_ui_metadata():
+                    name = field["name"]
+                    expected_type = self.TYPE_MAP.get(field["type"], str)
+                    self.assertIn(name, coerced,
+                                  f"Coerced missing field '{name}' in {p.name}")
+                    self.assertIsInstance(coerced[name], expected_type,
+                                          f"{p.name}.{name} type mismatch")
+
 
 if __name__ == '__main__':
+    import unittest
     unittest.main()

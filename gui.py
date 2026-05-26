@@ -23,10 +23,17 @@ from image_splitter.core import register_all_processors, batch_process_images
 from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.history import HistoryEntry, HistoryManager
 from image_splitter.engine.macro import MacroRecorder
+from image_splitter.engine.presets import (
+    delete_preset,
+    list_presets,
+    load_preset,
+    save_preset,
+)
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.logging_config import setup_default_logging
 from image_splitter.script_engine import ScriptEngine
 from image_splitter.ui.console import ConsolePanel
+from image_splitter.ui.pipeline import PipelineEditor
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +92,13 @@ class ImageSplitterApp:
 
         loaded_settings = settings.load_settings()
 
-        self.current_files = []
-        self.current_orig_size = (0, 0)
-        self.thumb_img = None
-        self.tk_thumb = None
-        self.preview_ratio = 1.0
+        self.current_files: List[str] = []
+        self.current_orig_size: Tuple[int, int] = (0, 0)
+        self.thumb_img: Optional[Image.Image] = None
+        self.tk_thumb: Optional[ImageTk.PhotoImage] = None
+        self.preview_ratio: float = 1.0
         self.stop_event = threading.Event()
-        self.dynamic_vars = {}
+        self.dynamic_vars: Dict[str, tk.Variable] = {}
         self._last_output_dir = loaded_settings.get("output_dir", "./output")
 
         # Blender-aligned core systems
@@ -102,8 +109,6 @@ class ImageSplitterApp:
         register_all_processors()
         self._setup_style()
         self._create_widgets()
-        self._create_console_panel()
-        self._create_status_bar()
 
     def _font(self, size: int = 10, bold: bool = False) -> Tuple[str, int, str]:
         weight = "bold" if bold else "normal"
@@ -140,6 +145,9 @@ class ImageSplitterApp:
 
         self._create_left_panel()
         self._create_right_widgets()
+        self._create_console_panel()
+        self._create_pipeline_panel()
+        self._create_status_bar()
         self._bind_keymap()
 
         processors = [p.display_name for p in ProcessorRegistry.list_all()]
@@ -165,7 +173,34 @@ class ImageSplitterApp:
 
         self.tool_tip_var = tk.StringVar()
         self.tool_tip_label = ttk.Label(self.p_inner, textvariable=self.tool_tip_var, style="Dim.TLabel", wraplength=310)
-        self.tool_tip_label.pack(anchor=tk.W, fill=tk.X, pady=(0, 15))
+        self.tool_tip_label.pack(anchor=tk.W, fill=tk.X, pady=(0, 5))
+
+        # --- Preset selector ---
+        preset_frame = tk.Frame(self.p_inner, bg=self.theme.PANEL_BG)
+        preset_frame.pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(preset_frame, text="Preset:", style="Dim.TLabel").pack(side=tk.LEFT)
+        self.preset_var = tk.StringVar()
+        self.preset_combo = ttk.Combobox(
+            preset_frame, textvariable=self.preset_var,
+            values=[], state="readonly", font=self._font(9), width=18,
+        )
+        self.preset_combo.pack(side=tk.LEFT, padx=(4, 4), fill=tk.X, expand=True)
+        self.preset_combo.bind("<<ComboboxSelected>>", self._on_preset_selected)
+        self._refresh_preset_list()
+
+        tk.Button(
+            preset_frame, text="Save", font=self._font(8),
+            bg=self.theme.ITEM_BG, fg=self.theme.DARK_FG, relief="flat",
+            command=self._save_preset, padx=4, bd=1,
+            activebackground=self.theme.SELECT, activeforeground="white",
+        ).pack(side=tk.LEFT, padx=(0, 2))
+        tk.Button(
+            preset_frame, text="Del", font=self._font(8),
+            bg=self.theme.ITEM_BG, fg=self.theme.DANGER, relief="flat",
+            command=self._delete_preset, padx=4, bd=1,
+            activebackground=self.theme.SELECT, activeforeground="white",
+        ).pack(side=tk.LEFT, padx=(0, 0))
+        # --- end preset selector ---
 
         tk.Frame(self.p_inner, bg=self.theme.BORDER, height=1).pack(fill=tk.X, pady=10)
         ttk.Label(self.p_inner, text="Parameters", style="Caption.TLabel").pack(pady=(10, 5), anchor=tk.W)
@@ -206,13 +241,20 @@ class ImageSplitterApp:
         for key_seq, action in global_binds.items():
             handler = self._resolve_action(action)
             if handler:
+
+                def _make_cb(h: Callable[[], None]) -> Callable[[tk.Event], None]:
+                    def _cb(_e: tk.Event) -> None:
+                        h()
+                    return _cb
+
                 try:
-                    self.root.bind(key_seq, lambda e, h=handler: h())
+                    self.root.bind(key_seq, _make_cb(handler))
                 except tk.TclError:
                     logger.warning("Invalid key sequence: %s", key_seq)
 
         self.file_listbox.bind("<Delete>", lambda e: self.remove_selected())
         self.root.bind("<Control-grave>", lambda e: self.toggle_console())
+        self.root.bind("<Control-p>", lambda e: self.toggle_pipeline())
         self.root.bind("<Control-Shift-R>", lambda e: self.toggle_macro_record())
         self.root.bind("<Control-z>", lambda e: self.undo_history())
         self.root.bind("<Control-Shift-Z>", lambda e: self.redo_history())
@@ -225,6 +267,7 @@ class ImageSplitterApp:
             "open_output_dir": self.open_output_dir,
             "stop_tasks": self.stop_tasks,
             "toggle_console": self.toggle_console,
+            "toggle_pipeline": self.toggle_pipeline,
             "toggle_macro": self.toggle_macro_record,
         }.get(action_name)
 
@@ -285,6 +328,7 @@ class ImageSplitterApp:
             tk.Label(frame, text=meta["label"], bg=self.theme.PANEL_BG, font=self._font(9)).pack(side=tk.LEFT)
 
             p_type = meta.get("type", "str")
+            var: tk.Variable
             if p_type == "bool":
                 var = tk.BooleanVar(value=bool(meta["default"]))
                 self.dynamic_vars[meta["name"]] = var
@@ -304,6 +348,96 @@ class ImageSplitterApp:
                 entry.bind("<KeyRelease>", lambda e: self.fast_update_preview())
 
         self.fast_update_preview()
+
+    # --- Preset management methods ---
+    def _refresh_preset_list(self) -> None:
+        names = list_presets()
+        self.preset_combo["values"] = names
+        if not names:
+            self.preset_var.set("")
+
+    def _on_preset_selected(self, _event: Optional[tk.Event] = None) -> None:
+        name = self.preset_var.get()
+        if not name:
+            return
+        data = load_preset(name)
+        if not data:
+            return
+        preset_processor = data.get("processor", "")
+        params = data.get("params", {})
+
+        # Switch processor if needed
+        processor = next(
+            (p for p in ProcessorRegistry.list_all()
+             if p.name == preset_processor), None
+        )
+        if processor is None:
+            messagebox.showwarning("Preset", f"Processor '{preset_processor}' not found")
+            return
+
+        if self.active_processor_name.get() != processor.display_name:
+            self.active_processor_name.set(processor.display_name)
+            self._on_processor_changed()
+
+        for meta in (ProcessorRegistry.get(preset_processor).get_ui_metadata()
+                     if ProcessorRegistry.list_all() else []):
+            key = meta["name"]
+            if key in params and key in self.dynamic_vars:
+                try:
+                    if isinstance(self.dynamic_vars[key], tk.BooleanVar):
+                        self.dynamic_vars[key].set(bool(params[key]))
+                    else:
+                        self.dynamic_vars[key].set(str(params[key]))
+                except Exception:
+                    pass
+
+        self.fast_update_preview()
+
+    def _save_preset(self) -> None:
+        from tkinter import simpledialog
+        name = simpledialog.askstring(
+            "Save Preset", "Preset name:", parent=self.root
+        )
+        if not name:
+            return
+        display_name = self.active_processor_name.get()
+        processor = next(
+            (p for p in ProcessorRegistry.list_all()
+             if p.display_name == display_name), None
+        )
+        if not processor:
+            return
+        params: Dict[str, Any] = {}
+        for meta in processor.get_ui_metadata():
+            key = meta["name"]
+            if key in self.dynamic_vars:
+                raw = self.dynamic_vars[key].get()
+                if meta.get("type") == "bool":
+                    params[key] = raw
+                elif meta.get("type") == "int":
+                    try:
+                        params[key] = int(raw)
+                    except (ValueError, TypeError):
+                        params[key] = raw
+                elif meta.get("type") == "float":
+                    try:
+                        params[key] = float(raw)
+                    except (ValueError, TypeError):
+                        params[key] = raw
+                else:
+                    params[key] = raw
+        save_preset(processor.name, name, params)
+        self._refresh_preset_list()
+        self.preset_var.set(name)
+
+    def _delete_preset(self) -> None:
+        name = self.preset_var.get()
+        if not name:
+            return
+        if messagebox.askyesno("Delete Preset", f"Delete preset '{name}'?"):
+            delete_preset(name)
+            self._refresh_preset_list()
+    # --- End preset methods ---
 
     def select_files(self) -> None:
         file_types = [("Images", "*.jpg *.jpeg *.png *.bmp *.webp"), ("All Files", "*.*")]
@@ -398,7 +532,13 @@ class ImageSplitterApp:
             if is_success:
                 success_count += 1
             progress = (i + 1) / total * 100
-            self.root.after(0, lambda p=progress, m=msg: self.update_progress(p, m))
+
+            def _make_update_cb(p: float, m: str) -> Callable[[], None]:
+                def _cb() -> None:
+                    self.update_progress(p, m)
+                return _cb
+
+            self.root.after(0, _make_update_cb(progress, msg))
         self.root.after(0, lambda: self.finish_report(success_count, total))
 
     def update_progress(self, p: float, msg: str) -> None:
@@ -461,6 +601,8 @@ class ImageSplitterApp:
         cw, ch = self.canvas.winfo_width(), self.canvas.winfo_height()
         if cw < 20 or ch < 20:
             return
+        if self.current_orig_size[0] <= 0 or self.current_orig_size[1] <= 0:
+            return
         self.preview_ratio = min(cw / self.current_orig_size[0], ch / self.current_orig_size[1])
         nw, nh = int(self.current_orig_size[0] * self.preview_ratio), int(self.current_orig_size[1] * self.preview_ratio)
         display_img = self.thumb_img.resize((nw, nh), Image.Resampling.BILINEAR)
@@ -504,6 +646,87 @@ class ImageSplitterApp:
         self.root.destroy()
 
     # ----------------------------------------------------------------
+    # Pipeline editor panel
+    # ----------------------------------------------------------------
+    def _create_pipeline_panel(self) -> None:
+        self.pipeline_frame = tk.Frame(self.main_container, bg=self.theme.DARK_BG)
+
+        pipeline_header = tk.Frame(self.pipeline_frame, bg=self.theme.PANEL_BG, height=28)
+        pipeline_header.pack(fill=tk.X)
+        tk.Label(
+            pipeline_header, text="Pipeline Editor (Ctrl+P to toggle)",
+            bg=self.theme.PANEL_BG, fg=self.theme.DIM_FG, font=self._font(9)
+        ).pack(side=tk.LEFT, padx=10)
+
+        btn_run_chain = tk.Button(
+            pipeline_header, text="Run Chain", font=self._font(8),
+            bg=self.theme.ACCENT, fg="white", relief="flat",
+            command=self._run_pipeline_chain, padx=8,
+            activebackground="#2563eb", activeforeground="white",
+        )
+        btn_run_chain.pack(side=tk.RIGHT, padx=(0, 8))
+
+        self.pipeline_editor = PipelineEditor(
+            self.pipeline_frame,
+            on_change=self._on_pipeline_changed,
+            font=self._mono(9),
+        )
+        self.pipeline_editor.pack(fill=tk.BOTH, expand=True)
+        self.pipeline_frame.pack_forget()
+        self._pipeline_visible = False
+
+    def toggle_pipeline(self) -> None:
+        if self._pipeline_visible:
+            self.pipeline_frame.pack_forget()
+            self._pipeline_visible = False
+        else:
+            self.pipeline_frame.pack(fill=tk.BOTH, expand=False, padx=10, pady=(0, 6))
+            self._pipeline_visible = True
+
+    def _on_pipeline_changed(self) -> None:
+        spec = self.pipeline_editor.to_chain_spec()
+        if self.console:
+            self.console.append_output(f"Chain: {spec}\n", "info")
+
+    def _run_pipeline_chain(self) -> None:
+        if not self.current_files:
+            return
+        spec = self.pipeline_editor.to_chain_spec()
+        if not spec:
+            messagebox.showwarning("Pipeline", "No steps in pipeline")
+            return
+        output_dir = self._last_output_dir
+        threading.Thread(
+            target=self._run_chain_thread, args=(spec, output_dir), daemon=True
+        ).start()
+
+    def _run_chain_thread(self, spec: str, output_dir: str) -> None:
+        from image_splitter.core import process_image
+        for path in self.current_files:
+            from PIL import Image
+            from image_splitter.engine.dispatcher import CommandDispatcher
+            try:
+                with Image.open(path) as img:
+                    results = CommandDispatcher.execute_chain(img, spec)
+                stem = Path(path).stem
+                out = Path(output_dir)
+                out.mkdir(parents=True, exist_ok=True)
+                for idx, res in enumerate(results, 1):
+                    res.save(out / f"{stem}_chain_{idx:02d}.png")
+                    res.close()
+                self.root.after(
+                    0, lambda: self.console.append_output(
+                        f"[OK] Chain processed: {path}\n", "success"
+                    )
+                )
+            except Exception as ex:
+
+                def _report_err(e: Exception = ex) -> None:
+                    self.console.append_output(f"[ERROR] {e}\n", "error")
+
+                self.root.after(0, _report_err)
+
+    # ----------------------------------------------------------------
     # Console panel
     # ----------------------------------------------------------------
     def _create_console_panel(self) -> None:
@@ -541,9 +764,16 @@ class ImageSplitterApp:
         if self.current_files:
             config["output_dir"] = self._last_output_dir
             config["template"] = self.template_var.get()
-            for path in self.current_files:
-                from image_splitter.core import process_image
-                process_image(path, operator, config)
+
+            def _work() -> None:
+                for path in self.current_files:
+                    from image_splitter.core import process_image
+                    process_image(path, operator, config)
+                self.root.after(0, lambda: self.console.append_output(
+                    "[OK] Batch complete\n", "success"
+                ))
+
+            threading.Thread(target=_work, daemon=True).start()
 
     # ----------------------------------------------------------------
     # Status bar
@@ -601,11 +831,16 @@ class ImageSplitterApp:
                 macro_dir.mkdir(parents=True, exist_ok=True)
                 ts = int(time.time())
                 macro_path = macro_dir / f"macro_{ts}.py"
-                with open(macro_path, "w", encoding="utf-8") as f:
-                    f.write(script)
-                self.console.append_output(
-                    f"Macro saved: {macro_path}\n", "success"
-                )
+                try:
+                    with open(macro_path, "w", encoding="utf-8") as f:
+                        f.write(script)
+                    self.console.append_output(
+                        f"Macro saved: {macro_path}\n", "success"
+                    )
+                except OSError as e:
+                    self.console.append_output(
+                        f"Failed to save macro: {e}\n", "error"
+                    )
         else:
             self.macro.start()
             self.console.append_output("[REC] Macro recording started\n", "info")

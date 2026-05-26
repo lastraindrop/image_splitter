@@ -1,5 +1,8 @@
 """Centralized registry for image processors."""
+import logging
 from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorRegistry:
@@ -20,7 +23,16 @@ class ProcessorRegistry:
     @classmethod
     def register(cls, processor: Any) -> None:
         """Register a processor."""
-        cls.get_instance()._processors[processor.name] = processor
+        inst = cls.get_instance()
+        if processor.name in inst._processors:
+            old = inst._processors[processor.name]
+            logger.warning(
+                "Processor '%s' re-registered: %s replaced by %s",
+                processor.name,
+                type(old).__name__,
+                type(processor).__name__,
+            )
+        inst._processors[processor.name] = processor
 
     @classmethod
     def get(cls, name: str) -> Any:

@@ -5,7 +5,7 @@ import multiprocessing
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
 
 # ---------------------------------------------------------
 # Path self-fix: supports absolute import of image_splitter
@@ -17,6 +17,7 @@ if project_root not in sys.path:
 from image_splitter import script_engine, settings
 from image_splitter.core import process_image, register_all_processors
 from image_splitter.engine.config_coercion import coerce_processor_config
+from image_splitter.engine.presets import list_presets as _list_presets, load_preset, save_preset
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.logging_config import setup_default_logging
 
@@ -114,7 +115,32 @@ def main() -> None:
              "'resizer(width=0.5)|grid_splitter(rows=2,cols=2)'"
     )
 
+    # Preset parameters
+    parser.add_argument(
+        "--preset", metavar="NAME",
+        help="Load a saved parameter preset by name"
+    )
+    parser.add_argument(
+        "--preset-save", metavar="NAME",
+        help="Save current parameters as a named preset"
+    )
+    parser.add_argument(
+        "--preset-list", action="store_true",
+        help="List all saved presets and exit"
+    )
+
     args = parser.parse_args()
+
+    # Handle --preset-list first (no processing needed)
+    if args.preset_list:
+        names = _list_presets()
+        if names:
+            print("Saved presets:")
+            for n in names:
+                print(f"  {n}")
+        else:
+            print("No presets saved.")
+        sys.exit(0)
 
     register_all_processors()
     processor = None
@@ -143,7 +169,30 @@ def main() -> None:
         sys.exit(0 if result.success else 1)
 
     # 2. Environment check and input parsing
-    input_files = []
+
+    # Handle --preset loading
+    if args.preset:
+        data = load_preset(args.preset)
+        if data is None:
+            print(f"[FAIL] Preset not found: {args.preset}")
+            sys.exit(1)
+        preset_processor = data.get("processor", "")
+        preset_params = data.get("params", {})
+        if preset_processor and args.processor == loaded_settings.get("default_processor", "grid_splitter"):
+            args.processor = preset_processor
+            try:
+                processor = ProcessorRegistry.get(args.processor)
+            except ValueError:
+                print(f"[FAIL] Processor from preset not found: {args.processor}")
+                sys.exit(1)
+        # Merge preset params (user-specified params take precedence)
+        for k, v in preset_params.items():
+            if k not in dict(args.set_items):
+                pass  # Will be added via config dict below
+    else:
+        preset_params = {}
+
+    input_files: list[Path] = []
     
     # Allowed extensions
     exts = ["jpg", "jpeg", "png", "bmp", "webp"]
@@ -194,7 +243,12 @@ def main() -> None:
 
     total_success = 0
 
-    config = {k: v for k, v in args.set_items}
+    config: dict[str, Any] = {}
+    # Start with preset params
+    if args.preset:
+        config.update(preset_params)
+    # Overlay CLI --set items
+    config.update({k: v for k, v in args.set_items})
     if args.rows is not None:
         config["rows"] = args.rows
     if args.cols is not None:
@@ -221,6 +275,11 @@ def main() -> None:
             config["cols"] = 3
         if "offsets" not in config:
             config["offsets"] = tuple(args.offset)
+
+    # Handle --preset-save (save before processing)
+    if args.preset_save:
+        save_preset(processor.name, args.preset_save, config)
+        print(f"[INFO] Preset '{args.preset_save}' saved for '{processor.name}'")
 
     # 2. Parallel processing
     with ProcessPoolExecutor(max_workers=args.jobs) as executor:

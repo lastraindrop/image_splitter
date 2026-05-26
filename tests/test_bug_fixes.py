@@ -175,10 +175,15 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bug14_delete_keybind_does_not_override_keymap(self):
         """BUG-14: <Delete> must be bound on file_listbox, not root."""
-        import tkinter as tk
-        from unittest.mock import MagicMock, patch
-        root = tk.Tk()
-        root.withdraw()
+        try:
+            import tkinter as tk
+        except ImportError:
+            self.skipTest("tkinter not available")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tk display not available")
         try:
             from image_splitter.gui import ImageSplitterApp
             app = ImageSplitterApp(root)
@@ -196,10 +201,16 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bug15_on_file_selected_opens_image_once(self):
         """BUG-15: _on_file_selected should only open image once."""
-        import tkinter as tk
+        try:
+            import tkinter as tk
+        except ImportError:
+            self.skipTest("tkinter not available")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tk display not available")
         from unittest.mock import patch, MagicMock
-        root = tk.Tk()
-        root.withdraw()
         try:
             from image_splitter.gui import ImageSplitterApp
             app = ImageSplitterApp(root)
@@ -263,7 +274,7 @@ class TestBugFixes(unittest.TestCase):
     def test_bug18_keymap_imports_settings_config_dir(self):
         """BUG-18: keymap should reuse settings.get_config_dir()."""
         from image_splitter import keymap, settings
-        km_dir = keymap.get_config_dir()
+        km_dir = keymap.get_keymap_path().parent
         s_dir = settings.get_config_dir()
         self.assertEqual(km_dir, s_dir)
 
@@ -320,6 +331,153 @@ class TestBugFixes(unittest.TestCase):
         handlers_after = len(root_logger_after.handlers)
         self.assertEqual(handlers_before, handlers_after,
                          "Importing should not add log handlers")
+
+    def test_bug29_watermark_cross_platform_font(self):
+        """BUG-29: Watermark must not crash on non-Windows platforms."""
+        from image_splitter.processors.watermark import TextWatermark
+        proc = TextWatermark()
+        img = Image.new("RGBA", (100, 100), (255, 255, 255, 255))
+        config = {"text": "FONT_TEST", "size": 30, "opacity": 128, "anchor": "C"}
+        results = proc.process(img, config)
+        self.assertEqual(len(results), 1)
+        result_img, ctx = results[0]
+        self.assertEqual(result_img.mode, "RGBA")
+
+    def test_bug30_console_execute_uses_thread(self):
+        """BUG-30: Console execute must not block GUI thread."""
+        try:
+            import tkinter as tk
+        except ImportError:
+            self.skipTest("tkinter not available")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tk display not available")
+        from unittest.mock import MagicMock, patch
+        try:
+            from image_splitter.gui import ImageSplitterApp
+            app = ImageSplitterApp(root)
+            app.current_files = [str(self.img_path)]
+            with patch("image_splitter.gui.threading.Thread") as mock_thread:
+                mock_thread_instance = MagicMock()
+                mock_thread.return_value = mock_thread_instance
+                app._console_execute("grid_splitter", {"rows": 2, "cols": 2})
+                mock_thread.assert_called_once()
+                mock_thread_instance.start.assert_called_once()
+        finally:
+            root.destroy()
+
+    def test_bug34_filters_p_mode_invert(self):
+        """BUG-34: Invert filter must handle P-mode images without crash."""
+        img = Image.new("P", (50, 50))
+        palette = [i % 256 for i in range(768)]
+        img.putpalette(palette)
+        p_path = self.test_dir / "p_mode_invert.png"
+        img.save(p_path)
+        config = {
+            "grayscale": False,
+            "invert": True,
+            "output_dir": str(self.output_dir),
+            "template": "p_invert",
+        }
+        success, msg = process_image(str(p_path), "filters", config)
+        self.assertTrue(success, f"P-mode invert failed: {msg}")
+
+    def test_bug36_chain_passes_extra_config(self):
+        """BUG-36: execute_chain must accept extra_config parameter."""
+        from image_splitter.engine.dispatcher import CommandDispatcher
+        img = Image.new("RGB", (100, 100), "blue")
+        extra = {"custom_key": "custom_value"}
+        result = CommandDispatcher.execute_chain(
+            img, "resizer(width=0.5,height=0.5)", extra_config=extra
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].size, (50, 50))
+        result[0].close()
+
+    def test_bug39_all_config_models_exported(self):
+        """BUG-39: All config models must be importable from package __init__."""
+        import image_splitter
+        for name in [
+            "SplitConfig", "AdjustConfig", "CustomSplitConfig", "ResizeConfig",
+            "ColorConfig", "FilterConfig", "FormatConfig", "GeometryConfig",
+            "MetadataConfig", "WatermarkConfig",
+        ]:
+            self.assertTrue(
+                hasattr(image_splitter, name),
+                f"{name} should be exported from image_splitter.__init__"
+            )
+
+    def test_bug40_registry_duplicate_name_warning(self):
+        """BUG-40: Registering duplicate processor name should warn, not silently overwrite."""
+        import logging
+        from image_splitter.engine.registry import ProcessorRegistry
+        from image_splitter.engine.base import BaseProcessor
+
+        class FakeProcessor(BaseProcessor):
+            @property
+            def name(self):
+                return "_test_duplicate"
+
+            @property
+            def display_name(self):
+                return "Test Duplicate"
+
+            def process(self, image, config):
+                return [(image.copy(), {})]
+
+        ProcessorRegistry.reset()
+        with self.assertLogs("image_splitter.engine.registry", level="WARNING") as cm:
+            fake1 = FakeProcessor()
+            fake2 = FakeProcessor()
+            ProcessorRegistry.register(fake1)
+            ProcessorRegistry.register(fake2)
+            self.assertTrue(
+                any("re-registered" in msg for msg in cm.output),
+                f"Expected re-registration warning, got: {cm.output}"
+            )
+        ProcessorRegistry.reset()
+        register_all_processors()
+
+    def test_bug27_macro_write_error_handling(self):
+        """BUG-27: Macro save returns False for empty recording."""
+        from image_splitter.engine.macro import MacroRecorder
+        recorder = MacroRecorder()
+        recorder.start()
+        result = recorder.save(self.test_dir / "empty_macro.py")
+        self.assertFalse(result, "Empty recording save should return False")
+
+    def test_bug38_preview_ratio_zero_origin_guard(self):
+        """BUG-38: _render_canvas must guard against zero-size origin."""
+        try:
+            import tkinter as tk
+        except ImportError:
+            self.skipTest("tkinter not available")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except Exception:
+            self.skipTest("Tk display not available")
+        from unittest.mock import MagicMock
+        try:
+            from image_splitter.gui import ImageSplitterApp
+            app = ImageSplitterApp(root)
+            app.current_orig_size = (0, 0)
+            app.thumb_img = Image.new("RGB", (10, 10))
+            app.canvas.winfo_width = MagicMock(return_value=500)
+            app.canvas.winfo_height = MagicMock(return_value=500)
+            app._render_canvas()
+        finally:
+            root.destroy()
+
+    def test_bug32_no_module_reload_on_discovery(self):
+        """BUG-32: Module reload should not occur for already-loaded modules."""
+        import importlib
+        from unittest.mock import patch
+        with patch("importlib.reload") as mock_reload:
+            register_all_processors()
+            mock_reload.assert_not_called()
 
 
 if __name__ == "__main__":

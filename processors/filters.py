@@ -60,6 +60,9 @@ class SimpleFilterProcessor(BaseProcessor):
                 inv_rgb = ImageOps.invert(rgb)
                 r, g, b = inv_rgb.split()
                 img = Image.merge('RGBA', (r, g, b, a))
+            elif img.mode == 'P':
+                img = img.convert("RGB")
+                img = ImageOps.invert(img)
             else:
                 img = ImageOps.invert(img)
 
@@ -77,6 +80,8 @@ class SimpleFilterProcessor(BaseProcessor):
         try:
             def get_val(key):
                 v = props.get(key)
+                if v is None:
+                    return None
                 return v.get() if hasattr(v, 'get') else v
 
             gs = get_val("grayscale")

@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from typing import Dict, Optional
 
-from image_splitter.settings import get_config_dir as _get_config_dir
+from image_splitter.settings import get_config_dir
 
 DEFAULT_KEYMAP = {
     "global": {
@@ -12,11 +12,6 @@ DEFAULT_KEYMAP = {
         "<Delete>": "remove_selected",
     }
 }
-
-
-def get_config_dir() -> Path:
-    """Get config directory path."""
-    return _get_config_dir()
 
 
 def get_keymap_path() -> Path:

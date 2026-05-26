@@ -1,10 +1,41 @@
 """Text watermark processor for adding semi-transparent labels to images."""
+import platform
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
 from image_splitter.engine.base import BaseProcessor
 from image_splitter.models import WatermarkConfig
+
+_FONT_SEARCH_PATHS = {
+    "Windows": ["arial.ttf", "C:/Windows/Fonts/arial.ttf"],
+    "Darwin": [
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/SFNSMono.ttf",
+        "/Library/Fonts/Arial.ttf",
+    ],
+    "Linux": [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ],
+}
+
+
+def _load_font(size: int):
+    """Load a usable font for the current platform.
+    
+    Returns:
+        A font object suitable for use with PIL ImageDraw.
+    """
+    system = platform.system()
+    candidates = _FONT_SEARCH_PATHS.get(system, []) + ["arial.ttf"]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except (OSError, IOError):
+            continue
+    return ImageFont.load_default(size=size)
 
 
 class TextWatermark(BaseProcessor):
@@ -62,14 +93,12 @@ class TextWatermark(BaseProcessor):
         txt_layer = Image.new("RGBA", img.size, (255, 255, 255, 0))
         draw = ImageDraw.Draw(txt_layer)
 
-        try:
-            font = ImageFont.truetype("arial.ttf", size)
-        except Exception:
-            font = ImageFont.load_default()
+        font = _load_font(size)
 
         w, h = img.size
         bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        tw = int(bbox[2] - bbox[0])
+        th = int(bbox[3] - bbox[1])
 
         padding = 20
         if anchor == "TL": 
@@ -99,6 +128,8 @@ class TextWatermark(BaseProcessor):
         try:
             def get_val(key: str) -> Any:
                 v = props.get(key)
+                if v is None:
+                    return None
                 return v.get() if hasattr(v, 'get') else v
 
 

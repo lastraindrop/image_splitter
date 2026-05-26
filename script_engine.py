@@ -45,7 +45,7 @@ class ScriptEngine:
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         success_count = 0
-        output_files = []
+        output_files: List[Path] = []
         out_dir = Path(output_dir)
 
         for path in input_files:
