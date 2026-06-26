@@ -1,0 +1,107 @@
+"""Metadata processor for cleaning privacy-sensitive EXIF/GPS information."""
+from typing import Any, Dict, List, Tuple, Optional
+
+from PIL import Image
+
+from image_splitter.engine.base import BaseProcessor
+from image_splitter.models import MetadataConfig
+
+
+class MetadataProcessor(BaseProcessor):
+    """Metadata processor.
+    
+    Strips privacy metadata (EXIF/GPS) with optional ICC profile retention.
+    """
+
+    @property
+    def config_model(self) -> type:
+        return MetadataConfig
+
+    @property
+    def name(self) -> str:
+        return "metadata_cleaner"
+
+    @property
+    def display_name(self) -> str:
+        return "Metadata Cleaner"
+
+    @property
+    def category(self) -> str:
+        return "Export"
+
+    @property
+    def tool_tip(self) -> str:
+        return "Strip privacy metadata (EXIF/GPS) to reduce file size."
+
+    def process(
+        self,
+        image: Image.Image,
+        config: Dict[str, Any]
+    ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
+        """Perform metadata cleanup."""
+        strip = config.get("strip_all", True)
+        keep_icc = config.get("keep_icc", True)
+
+        context = {"action": "metadata_cleaned"}
+        if not strip:
+            return [(image.copy(), context)]
+
+        # Save original palette (for P mode)
+        original_palette: Optional[List[int]] = None
+        if image.mode == "P":
+            palette = image.getpalette()
+            if palette:
+                original_palette = list(palette)
+
+        # Create clean copy
+        clean_img = Image.new(image.mode, image.size)
+
+        # P0-2: Set palette BEFORE paste to prevent color corruption.
+        # When pasting a P-mode image onto another P-mode image, PIL
+        # remaps source palette indices through the destination's
+        # palette.  If the destination has a default (all-black) palette,
+        # all colors are lost.  Setting the correct palette first fixes
+        # this.
+        if original_palette and image.mode == "P":
+            clean_img.putpalette(original_palette)
+        clean_img.paste(image)
+
+        # Process ICC Profile
+        icc = image.info.get("icc_profile")
+        if keep_icc and icc:
+            clean_img.info["icc_profile"] = icc
+            context["icc"] = "preserved"
+
+        return [(clean_img, context)]
+
+    def draw_preview(
+        self,
+        canvas: Any,
+        thumb_size: Tuple[int, int],
+        canvas_pos: Tuple[int, int],
+        ratio: float,
+        props: Dict[str, Any],
+        theme: Any
+    ) -> None:
+        try:
+            def get_val(key: str) -> Any:
+                v = props.get(key)
+                if v is None:
+                    return None
+                return v.get() if hasattr(v, 'get') else v
+
+            active = get_val("strip_all")
+            if not active:
+                return
+            
+            x0, y0 = canvas_pos
+            canvas.create_text(
+                x0 + 10, y0 + 10, 
+                text="Privacy ON", 
+                fill=theme.SUCCESS, 
+                anchor="nw", 
+                font=("Arial", 8), 
+                tags="overlay"
+            )
+        except Exception:
+            pass
