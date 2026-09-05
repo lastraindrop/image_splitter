@@ -118,7 +118,6 @@ class TestGuiSmoke(unittest.TestCase):
             if "Grid" in v
         )
         self.app._on_processor_changed(target)
-        original = self.app.state.param_values.get("rows")
 
         # Push a history entry with different parameters
         self.app.history.push(HistoryEntry(

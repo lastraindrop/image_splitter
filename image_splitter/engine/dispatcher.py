@@ -5,9 +5,6 @@ from typing import Any, Dict, List, Tuple
 
 from PIL import Image
 
-from image_splitter.engine.config_coercion import coerce_processor_config
-from image_splitter.engine.registry import ProcessorRegistry
-
 class CommandDispatcher:
     """
     Blender-style command parsing and dispatch center

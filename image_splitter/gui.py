@@ -20,7 +20,6 @@ import logging
 import os
 import platform
 import subprocess
-import sys
 import threading
 import time
 from pathlib import Path
@@ -144,6 +143,11 @@ class ImageSplitterApp:
         self._create_widgets()
 
         # Initialise state from defaults
+        # V14-6: honour the persisted template instead of the hardcoded
+        # GuiState default (on_close writes it back — read/write symmetry).
+        self.state.output_template = loaded_settings.get(
+            "template", self.state.output_template
+        )
         processors = ProcessorRegistry.list_all()
         if processors:
             self.state.set_processor(processors[0].display_name,
@@ -544,11 +548,15 @@ class ImageSplitterApp:
             key = meta["name"]
             val = self.state.param_values.get(key)
             if meta.get("type") == "int":
-                try: params[key] = int(val) if val is not None else 0
-                except (ValueError, TypeError): params[key] = val
+                try:
+                    params[key] = int(val) if val is not None else 0
+                except (ValueError, TypeError):
+                    params[key] = val
             elif meta.get("type") == "float":
-                try: params[key] = float(val) if val is not None else 0.0
-                except (ValueError, TypeError): params[key] = val
+                try:
+                    params[key] = float(val) if val is not None else 0.0
+                except (ValueError, TypeError):
+                    params[key] = val
             else:
                 params[key] = val
         save_preset(processor.name, name, params)
@@ -1017,18 +1025,41 @@ class ImageSplitterApp:
         ).start()
 
     def _run_chain_thread(self, spec: str, output_dir: str, files: List[str]) -> None:
+        from image_splitter.core import _prepare_image_for_save
         from image_splitter.engine.legacy_adapter import ChainAsGraph
+        from image_splitter.script_engine import chain_output_spec
+
+        # Honour a trailing format_converter in the chain (L-3): the
+        # output extension and quality follow the requested format
+        # instead of being hard-coded to .png.
+        out_ext, save_kwargs = chain_output_spec(spec)
+        ext_format = {"webp": "WEBP", "jpg": "JPEG", "jpeg": "JPEG",
+                      "png": "PNG", "bmp": "BMP"}
+        save_fmt = ext_format.get(out_ext, "PNG")
+
         for path in files:
             if self.stop_event.is_set():
                 break
             try:
                 with Image.open(path) as img:
+                    # V14-8: preserve the source ICC profile (parity with
+                    # core.process_image and ScriptEngine.chain).
+                    icc_profile = img.info.get("icc_profile")
                     results = ChainAsGraph.execute_chain(img, spec)
                 stem = Path(path).stem
                 out = Path(output_dir)
                 out.mkdir(parents=True, exist_ok=True)
+                save_kwargs_file = dict(save_kwargs)
+                if icc_profile:
+                    save_kwargs_file["icc_profile"] = icc_profile
                 for idx, res in enumerate(results, 1):
-                    res.save(out / f"{stem}_chain_{idx:02d}.png")
+                    out_path = out / f"{stem}_chain_{idx:02d}.{out_ext}"
+                    save_img = _prepare_image_for_save(res, save_fmt)
+                    try:
+                        save_img.save(out_path, **save_kwargs_file)
+                    finally:
+                        if save_img is not res:
+                            save_img.close()
                     res.close()
                 self.root.after(0, lambda p=path: self.console.append_output(
                     f"[OK] Chain processed: {p}\n", "success"))
@@ -1052,6 +1083,7 @@ class ImageSplitterApp:
             self.console_frame,
             script_engine=self.script_engine,
             on_execute=self._console_execute,
+            on_chain=self._console_execute_chain,
             theme=self.theme,
             font=self._mono(9),
             get_current_files=lambda: list(self.state.current_files),
@@ -1095,6 +1127,35 @@ class ImageSplitterApp:
                         f"[ERROR] {p}: {e}\n", "error"))
             self.root.after(0, lambda: self.console.append_output(
                 "[OK] Batch complete\n", "success"))
+            self.root.after(0, self._finish_operation)
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _console_execute_chain(self, chain_spec: str) -> None:
+        """Run a console '|' chain in the background (non-blocking).
+
+        Previously this path executed ``ScriptEngine.chain`` synchronously
+        on the Tk main thread — freezing the GUI, ignoring ``_busy`` /
+        ``stop_event`` / the configured output directory, and skipping
+        macro recording.  It now mirrors ``_console_execute`` threading.
+        """
+        if not self.state.current_files:
+            self.console.append_output("[INFO] No files loaded — use Load button first\n", "info")
+            return
+        if self._busy:
+            self.console.append_output("[BUSY] An operation is already running\n", "warn")
+            return
+        self._busy = True
+        output_dir = self._last_output_dir
+        files = list(self.state.current_files)
+
+        if self.macro.is_recording:
+            self.macro.record("pipeline_chain", {"spec": chain_spec})
+
+        def _work() -> None:
+            result = self.script_engine.chain(files, chain_spec, output_dir)
+            self.root.after(0, lambda: self.console.append_output(
+                f"{result.message}\n", "success" if result.success else "error"))
             self.root.after(0, self._finish_operation)
 
         threading.Thread(target=_work, daemon=True).start()
@@ -1239,32 +1300,73 @@ class ImageSplitterApp:
     # ------------------------------------------------------------------
     # Keymap
     # ------------------------------------------------------------------
+    def _action_handlers(self) -> Dict[str, Callable[[], None]]:
+        """Map keymap action names to bound methods.
+
+        Includes a legacy alias ``toggle_macro`` for keymaps saved by
+        older versions of the app.
+        """
+        return {
+            "run_batch": self.run_batch,
+            "open_output_dir": self.open_output_dir,
+            "undo_history": self.undo_history,
+            "redo_history": self.redo_history,
+            "toggle_macro_record": self.toggle_macro_record,
+            "toggle_macro": self.toggle_macro_record,  # legacy alias
+            "toggle_pipeline": self.toggle_pipeline,
+            "toggle_console": self.toggle_console,
+            "select_files": self.select_files,
+            "remove_selected": self.remove_selected,
+            "clear_list": self.clear_list,
+            "stop_tasks": self.stop_tasks,
+        }
+
+    def _is_typing_context(self) -> bool:
+        """Return ``True`` when keyboard focus is inside a text-input widget.
+
+        V14-3: Tk bindtags propagate key events from the focused widget up
+        to the toplevel, so a global ``<Delete>`` binding fired *in
+        addition to* normal text editing (e.g. deleting the selected file
+        while editing the template entry).  Keymap actions must be
+        suppressed while the user is typing.
+        """
+        try:
+            focused = self.root.focus_get()
+        except Exception:
+            return False
+        if focused is None:
+            return False
+        # customtkinter wrappers (CTkComboBox hosts an inner tk.Entry, so
+        # the class check alone is not enough — fall through to winfo_class).
+        if isinstance(focused, (ctk.CTkEntry, ctk.CTkTextbox, ctk.CTkComboBox)):
+            return True
+        try:
+            return focused.winfo_class() in {
+                "Entry", "Text", "Spinbox", "Combobox", "TEntry", "TCombobox",
+            }
+        except Exception:
+            return False
+
     def _bind_keymap(self) -> None:
         km = keymap.load_keymap()
         binds = km.get("global", {})
+        handlers = self._action_handlers()
         for seq, action in binds.items():
-            if action == "run_batch":
-                self.root.bind(seq, lambda e: self.run_batch())
-            elif action == "open_output_dir":
-                self.root.bind(seq, lambda e: self.open_output_dir())
-            elif action == "undo_history":
-                self.root.bind(seq, lambda e: self.undo_history())
-            elif action == "redo_history":
-                self.root.bind(seq, lambda e: self.redo_history())
-            elif action == "toggle_macro_record":
-                self.root.bind(seq, lambda e: self.toggle_macro_record())
-            elif action == "toggle_pipeline":
-                self.root.bind(seq, lambda e: self.toggle_pipeline())
-            elif action == "toggle_console":
-                self.root.bind(seq, lambda e: self.toggle_console())
-            elif action == "select_files":
-                self.root.bind(seq, lambda e: self.select_files())
-            elif action == "clear_list":
-                self.root.bind(seq, lambda e: self.clear_list())
-            elif action == "stop_tasks":
-                self.root.bind(seq, lambda e: self.stop_tasks())
-        # Delete key on file list (handled by file_listbox)
-        self.root.bind("<Delete>", lambda e: self.remove_selected())
+            handler = handlers.get(action)
+            if handler is not None:
+                bound: Callable[[], None] = handler
+
+                def _dispatch(_event: Any, h: Callable[[], None] = bound) -> None:
+                    if self._is_typing_context():
+                        return
+                    h()
+                self.root.bind(seq, _dispatch)
+            else:
+                logger.warning(
+                    "Keymap action '%s' (%s) has no handler — "
+                    "this keybinding is dead. Known actions: %s",
+                    action, seq, ", ".join(sorted(handlers)),
+                )
 
     # ------------------------------------------------------------------
     # Cleanup
@@ -1282,7 +1384,24 @@ class ImageSplitterApp:
 
 
 def main() -> None:
+    import argparse
+
+    from image_splitter import __version__
+
+    parser = argparse.ArgumentParser(
+        prog="image-splitter-gui",
+        description="Image Splitter Pro — GUI mode",
+    )
+    parser.add_argument(
+        "-V", "--version", action="version", version=f"%(prog)s {__version__}"
+    )
+    parser.parse_args()
+
     setup_default_logging()
+    # V14: GUI users cannot see stderr — persist diagnostics to a
+    # rotating file so processor failures are diagnosable after the fact.
+    from image_splitter.logging_config import setup_file_logging
+    setup_file_logging(level="INFO")
     root = ctk.CTk()
     app = ImageSplitterApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)

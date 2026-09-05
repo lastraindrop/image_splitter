@@ -1,6 +1,5 @@
 # image_splitter/tests/test_settings.py
 """Tests for the settings persistence system."""
-import json
 import tempfile
 import unittest
 from pathlib import Path

@@ -145,11 +145,24 @@ class MacroRecorder:
             lines.append(f"    # Step {i}: {step.operator_name}")
             if step.description:
                 lines.append(f"    #   {step.description}")
-            lines.append(
-                f"    result_{i} = engine.process("
-                f"input_files, '{step.operator_name}', {config_repr}"
-                f")"
-            )
+            # V14-2: pipeline/console chains are recorded under the
+            # pseudo-operator ``pipeline_chain`` with a ``spec`` param.
+            # They must replay via ScriptEngine.chain() — emitting
+            # engine.process(..., 'pipeline_chain', ...) produced
+            # "Unknown operator" at playback time.
+            if step.operator_name == "pipeline_chain" and "spec" in step.config:
+                spec_repr = str(step.config["spec"])
+                lines.append(
+                    f"    result_{i} = engine.chain("
+                    f"input_files, {spec_repr!r}, output_dir"
+                    f")"
+                )
+            else:
+                lines.append(
+                    f"    result_{i} = engine.process("
+                    f"input_files, '{step.operator_name}', {config_repr}"
+                    f")"
+                )
             lines.append(
                 f"    if not result_{i}.success:"
             )

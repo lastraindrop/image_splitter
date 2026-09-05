@@ -18,6 +18,44 @@ class ScriptResult:
         self.output_files: List[Path] = output_files or []
 
 
+def chain_output_spec(chain_spec: str) -> tuple[str, dict[str, Any]]:
+    """Derive the output extension and save kwargs for a chain.
+
+    If the *last* operator in the chain is ``format_converter`` the chain
+    output honours its target format and quality; otherwise the output
+    defaults to PNG.  This closes known limitation L-3 (chain output was
+    previously hard-coded to ``.png`` regardless of a trailing converter).
+    """
+    from image_splitter.engine.config_coercion import coerce_processor_config
+    from image_splitter.engine.dispatcher import CommandDispatcher
+
+    ext = "png"
+    save_kwargs: dict[str, Any] = {}
+    try:
+        ops = CommandDispatcher.parse_command(chain_spec)
+    except ValueError:
+        return ext, save_kwargs
+    if not ops:
+        return ext, save_kwargs
+
+    last_name, last_props = ops[-1]
+    if last_name != "format_converter":
+        return ext, save_kwargs
+
+    if not ProcessorRegistry.list_all():
+        from image_splitter.core import register_all_processors
+        register_all_processors()
+    processor = ProcessorRegistry.get("format_converter")
+    coerced = coerce_processor_config(processor, dict(last_props))
+    fmt = str(coerced.get("format", "WebP"))
+    quality = int(coerced.get("quality", 80))
+    ext_map = {"WebP": "webp", "JPEG": "jpg", "PNG": "png", "BMP": "bmp"}
+    ext = ext_map.get(fmt, "png")
+    if fmt in ("JPEG", "WebP"):  # quality only for lossy formats
+        save_kwargs["quality"] = quality
+    return ext, save_kwargs
+
+
 class ScriptEngine:
     """Simple script engine for batch processing."""
 
@@ -74,9 +112,14 @@ class ScriptEngine:
         Uses ChainAsGraph (Node Graph engine) for consistent execution
         across GUI and CLI pipelines.
         """
+        from image_splitter.core import _prepare_image_for_save
         from image_splitter.engine.legacy_adapter import ChainAsGraph
 
         Path(output_dir).mkdir(parents=True, exist_ok=True)
+        out_ext, save_kwargs = chain_output_spec(chain_spec)
+        ext_format = {"webp": "WEBP", "jpg": "JPEG", "jpeg": "JPEG",
+                      "png": "PNG", "bmp": "BMP"}
+        save_fmt = ext_format.get(out_ext, "PNG")
 
         results = []
         output_files = []
@@ -85,11 +128,24 @@ class ScriptEngine:
         for path in input_paths:
             with Image.open(path) as img:
                 try:
+                    # V14-8: preserve the source ICC profile —
+                    # core.process_image keeps it but the chain path
+                    # previously dropped it, producing desaturated
+                    # output on wide-gamut displays.
+                    icc_profile = img.info.get("icc_profile")
                     processed = ChainAsGraph.execute_chain(img, chain_spec)
+                    stem = Path(path).stem
+                    save_kwargs_file = dict(save_kwargs)
+                    if icc_profile:
+                        save_kwargs_file["icc_profile"] = icc_profile
                     for proc_img in processed:
-                        stem = Path(path).stem
-                        out_path = Path(output_dir) / f"{stem}_chain_{idx:02d}.png"
-                        proc_img.save(out_path)
+                        out_path = Path(output_dir) / f"{stem}_chain_{idx:02d}.{out_ext}"
+                        save_img = _prepare_image_for_save(proc_img, save_fmt)
+                        try:
+                            save_img.save(out_path, **save_kwargs_file)
+                        finally:
+                            if save_img is not proc_img:
+                                save_img.close()
                         output_files.append(out_path)
                         proc_img.close()
                         idx += 1

@@ -55,8 +55,8 @@ class SimpleFilterProcessor(BaseProcessor):
                 gray = Image.merge("RGB", (r, g, b)).convert("L")
                 img = Image.merge("RGBA", (gray, gray, gray, a))
             elif img.mode == "LA":
-                l, a = img.split()
-                img = Image.merge("LA", (l, a))
+                lum, alpha = img.split()
+                img = Image.merge("LA", (lum, alpha))
             else:
                 img = img.convert("L").convert("RGB")
         

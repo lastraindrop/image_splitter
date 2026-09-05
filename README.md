@@ -12,7 +12,7 @@ A lightweight, modular image processing framework with Blender-like operator phi
 - **Typed Property System**: `IntProp`, `FloatProp`, `BoolProp`, `EnumProp`, `StrProp`, `ListProp`, `ColorProp` descriptors with coercion, validation, and update callbacks. (Experimental — reserved for future Node Graph UI.)
 - **Image Data Blocks**: Named, versioned, reference-counted image containers with class-level registry — Blender ID-style.
 - **Operation History**: Undo/Redo stack records every operation, exportable as JSON log.
-- **Macro Recording**: One-click recording generates reusable Python scripts with sandboxed execution.
+- **Macro Recording**: One-click recording generates reusable Python scripts with restricted execution. Note: the restriction is an anti-footgun guard, not a security boundary — only play back macros you authored.
 - **Parameter Presets**: Save/load named parameter presets per operator (CLI `--preset` and GUI).
 - **Visual Pipeline Editor**: Compose multi-step operator chains via GUI (Ctrl+P).
 - **Interactive Console**: Built-in command console with tab completion and history (Ctrl+`).
@@ -20,7 +20,7 @@ A lightweight, modular image processing framework with Blender-like operator phi
 - **High-Performance Engine**: CLI version uses multi-processing by default (4-8x speedup).
 - **Industrial-Grade Safety**: Strict Pillow handle management with Path Traversal interception and cell leak protection.
 - **Cross-Platform**: Full Windows/macOS/Linux support with platform-aware font loading.
-- **Static Type Checking**: Full mypy compliance with `--ignore-missing-imports` — zero type errors across 83 source files.
+- **Static Type Checking**: Full mypy compliance with `--ignore-missing-imports` — zero type errors across 44 source files.
 
 ## Quick Start
 
@@ -50,11 +50,11 @@ python -m image_splitter.cli test.png -p custom_splitter --set h_lines=[100,300,
 # Use a saved preset
 python -m image_splitter.cli input.png --preset "my_split"
 
-# Save current parameters as a preset
+# Save current parameters as a preset (output_dir/template excluded)
 python -m image_splitter.cli input.png -r 3 -c 3 --preset-save "3x3_grid"
 
-# List saved presets
-python -m image_splitter.cli input.png --preset-list
+# List saved presets (no input required)
+python -m image_splitter.cli --preset-list
 ```
 
 ### Script Mode
@@ -113,9 +113,16 @@ Settings are persisted to `~/.image_splitter/settings.json`:
     "template": "{filename}_{index}",
     "max_workers": 0,
     "default_rows": 3,
-    "default_cols": 3
+    "default_cols": 3,
+    "window_geometry": "1100x820"
 }
 ```
+
+`default_rows` / `default_cols` are the CLI grid fallbacks (explicit `-r/-c`
+and presets take precedence); `template` is the GUI's startup filename
+template; `window_geometry` restores the GUI window size. GUI diagnostics
+are additionally logged to `~/.image_splitter/logs/gui.log` (rotating,
+1 MB × 3 backups).
 
 ## Keybindings
 
@@ -127,11 +134,14 @@ Default keybindings in `~/.image_splitter/keymap.json`:
         "<Control-o>": "select_files",
         "<Control-Return>": "run_batch",
         "<Delete>": "remove_selected",
+        "<Control-Shift-Delete>": "clear_list",
         "<Control-grave>": "toggle_console",
         "<Control-p>": "toggle_pipeline",
-        "<Control-Shift-R>": "toggle_macro",
+        "<Control-Shift-R>": "toggle_macro_record",
         "<Control-z>": "undo_history",
-        "<Control-Shift-Z>": "redo_history"
+        "<Control-Shift-Z>": "redo_history",
+        "<Control-e>": "open_output_dir",
+        "<Escape>": "stop_tasks"
     }
 }
 ```
@@ -141,51 +151,55 @@ Default keybindings in `~/.image_splitter/keymap.json`:
 | `Ctrl+O` | Open images |
 | `Ctrl+Enter` | Run batch processing |
 | `Delete` | Remove selected file |
+| `Ctrl+Shift+Delete` | Clear file list |
 | `Ctrl+P` | Toggle pipeline editor |
 | `Ctrl+Shift+R` | Start/stop macro recording |
 | `Ctrl+Z` | Undo last operation |
 | `Ctrl+Shift+Z` | Redo last operation |
+| `Ctrl+E` | Open output directory |
+| `Escape` | Abort current task |
 | `` Ctrl+` `` | Toggle command console |
 
 ## Architecture
 
 ```
-image_splitter/
-├── cli.py                    # CLI entry point (multiprocessing + presets)
-├── gui.py                    # GUI entry point (customtkinter + GuiState ViewModel)
-├── core.py                   # Core processing pipeline + unified Node Graph execution
-├── settings.py               # User settings persistence
-├── keymap.py                 # Keybinding system
-├── script_engine.py          # Batch scripting engine
-├── logging_config.py         # Logging configuration
-├── models.py                 # Configuration dataclasses (13 models)
-├── pyproject.toml            # Package configuration
-├── py.typed                  # PEP 561 type marker
-├── engine/
-│   ├── base.py               # BaseProcessor/BaseConfig abstract classes
-│   ├── registry.py           # Processor registry (thread-safe singleton)
-│   ├── dispatcher.py         # Command dispatcher + chain execution
-│   ├── config_coercion.py    # Parameter type coercion (int/float/bool/enum/list/str)
-│   ├── history.py            # Operation history stack (undo/redo)
-│   ├── macro.py              # Macro recording & sandboxed playback
-│   ├── presets.py            # Parameter presets (save/load/import/export)
-│   ├── props.py              # Typed Property descriptor system (Blender bpy.props style) — Experimental
-│   ├── data_blocks.py        # ImageDataBlock (named, versioned, ref-counted)
-│   ├── nodes.py              # DAG node graph (Socket, BaseNode, 4 concrete nodes)
-│   ├── evaluator.py          # NodeGraph evaluator + LRU EvaluationCache
-│   ├── legacy_adapter.py     # ProcessorNodeAdapter + ChainAsGraph (unified execution bridge)
-│   └── _ui_metadata_util.py  # Auto-generate UI metadata from dataclass field annotations
-├── processors/               # Processor plugins (13 built-in)
-├── plugins/                  # User plugin directory (auto-discovered)
-│   └── example_plugin.py     # Example: invert colors plugin
-├── ui/
-│   ├── _state.py             # GuiState — framework-agnostic ViewModel
-│   ├── console.py            # Interactive command console panel (customtkinter)
-│   ├── pipeline.py           # Visual pipeline chain editor (customtkinter)
-│   └── param_widgets.py      # Shared parameter widget factory (customtkinter)
+image_splitter/                # repository root
+├── pyproject.toml             # Package configuration
+├── image_splitter/            # the package
+│   ├── py.typed               # PEP 561 type marker
+│   ├── cli.py                # CLI entry point (multiprocessing + presets)
+│   ├── gui.py                # GUI entry point (customtkinter + GuiState ViewModel)
+│   ├── core.py               # Core processing pipeline + unified Node Graph execution
+│   ├── settings.py           # User settings persistence
+│   ├── keymap.py             # Keybinding system
+│   ├── script_engine.py      # Batch scripting engine
+│   ├── logging_config.py     # Logging configuration
+│   ├── models.py             # Configuration dataclasses (13 models)
+│   ├── engine/
+│   │   ├── base.py           # BaseProcessor abstract class
+│   │   ├── registry.py       # Processor registry (thread-safe singleton)
+│   │   ├── dispatcher.py     # Command dispatcher + chain execution
+│   │   ├── config_coercion.py # Parameter type coercion (int/float/bool/enum/list/str)
+│   │   ├── history.py        # Operation history stack (undo/redo)
+│   │   ├── macro.py          # Macro recording & sandboxed playback
+│   │   ├── presets.py        # Parameter presets (save/load/import/export)
+│   │   ├── props.py          # Typed Property descriptor system (Blender bpy.props style) — Experimental
+│   │   ├── data_blocks.py    # ImageDataBlock (named, versioned, ref-counted)
+│   │   ├── nodes.py          # DAG node graph (Socket, BaseNode, 4 concrete nodes)
+│   │   ├── evaluator.py      # NodeGraph evaluator + LRU EvaluationCache
+│   │   ├── legacy_adapter.py # ProcessorNodeAdapter + ChainAsGraph (unified execution bridge)
+│   │   └── _ui_metadata_util.py # Auto-generate UI metadata from dataclass field annotations
+│   ├── processors/           # Processor plugins (13 built-in)
+│   ├── plugins/              # User plugin directory (auto-discovered)
+│   │   └── example_plugin.py # Example: invert colors plugin
+│   └── ui/
+│       ├── _state.py         # GuiState — framework-agnostic ViewModel
+│       ├── console.py        # Interactive command console panel (customtkinter)
+│       ├── pipeline.py       # Visual pipeline chain editor (customtkinter)
+│       └── param_widgets.py  # Shared parameter widget factory (customtkinter)
 ├── .github/workflows/
 │   └── ci.yml                # CI/CD pipeline (multi-OS, Python 3.10-3.13)
-└── tests/                    # Test suite (426 tests, 37 files)
+└── tests/                    # Test suite (465 tests, 39 files)
 ```
 
 ## Engine Layer
@@ -221,7 +235,7 @@ MIT
 
 ## Test Suite
 
-The project includes **426 tests** across 37 test files:
+The project includes **465 tests** across 39 test files:
 
 | Test File | Description |
 |-----------|-------------|
@@ -262,6 +276,8 @@ The project includes **426 tests** across 37 test files:
 | `test_settings.py` | Settings: defaults, save/load roundtrip, merge, get/set, corrupted JSON |
 | `test_ui_metadata_util.py` | UI metadata auto-generation from dataclass fields |
 | `test_ui_preview.py` | Preview rendering: all processor draw_preview, graceful dirty-data handling |
+| `test_v13_fixes.py` | V13 audit regressions: packaging, keymap coverage, border double, console chain, CLI dir expansion, preset precedence, chain format (17 tests) |
+| `test_v14_fixes.py` | V14 audit regressions: border dashed, macro chain playback, keymap typing guard, graph cleanup, CLI settings defaults, chain ICC, preset sanitization (22 tests) |
 | `test_workflow.py` | Full end-to-end workflows: chains, batch, presets+macro+history, boundary values |
 
 Run tests:

@@ -4,12 +4,16 @@ Stores named presets as JSON files in ~/.image_splitter/presets/.
 Each preset captures a processor's full parameter set for easy recall.
 """
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from image_splitter.settings import get_config_dir
 
 PRESETS_DIR_NAME = "presets"
+
+# Windows-illegal filename characters (also strip control chars).
+_ILLEGAL_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def _presets_dir() -> Path:
@@ -19,7 +23,16 @@ def _presets_dir() -> Path:
 
 
 def _preset_path(name: str) -> Path:
-    safe = name.replace("/", "_").replace("\\", "_").replace("..", "_")
+    """Map a preset name to a safe filesystem path.
+
+    V14-9: full sanitization — a name containing e.g. a colon ("a:b")
+    previously raised an unhandled OSError on Windows when the file was
+    opened for writing.
+    """
+    safe = _ILLEGAL_NAME_CHARS.sub("_", name)
+    safe = safe.strip(" .")  # Windows rejects trailing dots/spaces
+    if not safe or not any(c.isalnum() for c in safe):
+        safe = "unnamed"
     return _presets_dir() / f"{safe}.json"
 
 

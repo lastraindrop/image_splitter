@@ -10,7 +10,7 @@ to the new Node Graph evaluation engine.  Two public classes:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from PIL import Image
 
@@ -146,9 +146,17 @@ class ChainAsGraph:
         # 1. Parse the command string.
         ops: List[tuple[str, Dict[str, Any]]] = CommandDispatcher.parse_command(cmd_str)
 
+        # V14: unique-per-call temp block names — fixed "__chain_input__"
+        # names in the class-level registry raced between concurrent
+        # executions (one thread's forget() released the other's image).
+        import uuid
+        uid = uuid.uuid4().hex[:8]
+        input_name = f"__chain_input_{uid}__"
+        output_name = f"__chain_output_{uid}__"
+
         # 2. Create an ImageDataBlock for the input image.
         #    Use a copy so the caller's image is not closed by clear_all().
-        input_block = ImageDataBlock(name="__chain_input__", image=image.copy())
+        input_block = ImageDataBlock(name=input_name, image=image.copy())
 
         # 3. Build a linear NodeGraph.
         graph = NodeGraph()
@@ -160,7 +168,7 @@ class ChainAsGraph:
 
         # Processor nodes
         prev_name: str = in_node.name
-        last_adapter: Optional[ProcessorNodeAdapter] = None
+        adapters: list[ProcessorNodeAdapter] = []
         for idx, (op_name, props) in enumerate(ops):
             processor = ProcessorRegistry.get(op_name)
             adapter = ProcessorNodeAdapter(processor, f"__proc_{idx}_{op_name}__")
@@ -180,39 +188,48 @@ class ChainAsGraph:
             # Connect previous → current (by node name).
             graph.connect(prev_name, "image", adapter.name, "image")
             prev_name = adapter.name
-            last_adapter = adapter
+            adapters.append(adapter)
 
         # Output node
         out_node = ImageOutputNode("__out__")
-        out_node.set_prop("target", "__chain_output__")
+        out_node.set_prop("target", output_name)
         graph.add_node(out_node)
         graph.connect(prev_name, "image", out_node.name, "image")
 
-        # 4. Evaluate the graph.
-        graph.evaluate(force_all=True)
-
-        # 5. Collect result (copy before cleanup so returned images
-        #    survive cleanup calling .close()).
-        #    For multi-output processors (splitters), collect all
-        #    results from the last adapter's _all_outputs.
+        # 4. Evaluate the graph; on any failure still clean up temp blocks.
         result_images: List[Image.Image] = []
-        if last_adapter is not None and len(last_adapter._all_outputs) > 1:
-            # Multi-output: collect all output images
-            for img in last_adapter._all_outputs:
-                result_images.append(img.copy())
-        else:
-            # Single-output: use the output block
-            output_block = ImageDataBlock.get_by_name("__chain_output__")
-            if output_block is not None and output_block.image is not None:
-                result_images.append(output_block.image.copy())
+        try:
+            graph.evaluate(force_all=True)
 
-        # 6. Clean up — only release blocks created by this chain,
-        #    not ALL blocks in the global registry.
-        for block_name in (input_block.name, "__chain_output__"):
-            ImageDataBlock.forget(block_name)
-        # Remove processor adapter blocks
-        for name in list(ImageDataBlock._name_registry):
-            if name.startswith("__proc_"):
-                ImageDataBlock.forget(name)
+            # 5. Collect result (copy before cleanup so returned images
+            #    survive cleanup calling .close()).
+            #    For multi-output processors (splitters), collect all
+            #    results from the last adapter's _all_outputs.
+            if adapters and len(adapters[-1]._all_outputs) > 1:
+                # Multi-output: collect all output images
+                for img in adapters[-1]._all_outputs:
+                    result_images.append(img.copy())
+            else:
+                # Single-output: use the output block
+                output_block = ImageDataBlock.get_by_name(output_name)
+                if output_block is not None and output_block.image is not None:
+                    result_images.append(output_block.image.copy())
+        finally:
+            # 6. Clean up — only release blocks created by this chain,
+            #    not ALL blocks in the global registry.
+            for block_name in (input_name, output_name):
+                ImageDataBlock.forget(block_name)
+            # Close intermediate adapter outputs so multi-op chains do not
+            # retain every intermediate image until garbage collection.
+            # The final results are copies (or owned by the caller), so
+            # closing here is safe.
+            for adapter in adapters:
+                for img in adapter._all_outputs:
+                    try:
+                        img.close()
+                    except Exception:
+                        pass
+                adapter._all_outputs = []
+                adapter._all_contexts = []
 
         return result_images

@@ -16,7 +16,7 @@ float→"float", bool→"bool", str→"str", list/tuple→"list").
 from __future__ import annotations
 
 import typing
-from dataclasses import MISSING, Field, fields
+from dataclasses import MISSING, fields
 from typing import Any
 
 

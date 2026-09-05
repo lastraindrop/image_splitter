@@ -122,7 +122,8 @@ class TestProcessorsDeepDive(unittest.TestCase):
         for case in test_cases:
             with self.subTest(case=case):
                 # Clear output
-                for f in self.output_dir.glob("*"): f.unlink()
+                for f in self.output_dir.glob("*"):
+                    f.unlink()
                 
                 success, msg = process_image(str(self.rgba_path), "canvas_adjuster", {**case, "output_dir": str(self.output_dir), "template": "{filename}_adjusted"})
                 self.assertTrue(success, f"Canvas adjustment test failed [Case: {case}]: {msg}")

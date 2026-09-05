@@ -188,7 +188,19 @@ class TestImageSplitterCLI(unittest.TestCase):
 
     def test_cli_preset_save_and_load(self):
         """--preset-save and --preset should work end-to-end."""
+        from unittest.mock import patch
+
         preset_name = "test_cli_3x3"
+        # Isolate the presets dir — cli.main() would otherwise write into
+        # the real ~/.image_splitter/presets.
+        pd = self.test_dir / "presets"
+        pd.mkdir()
+        patcher = patch(
+            "image_splitter.engine.presets._presets_dir", return_value=pd
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         # Save the preset
         test_args_save = [
             "cli.py", str(self.img_path),

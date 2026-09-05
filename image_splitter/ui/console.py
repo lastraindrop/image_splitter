@@ -34,10 +34,12 @@ class ConsolePanel(ctk.CTkFrame):
         theme: Optional[Any] = None,
         font: tuple = ("Consolas", 10),
         get_current_files: Optional[Callable[[], List[str]]] = None,
+        on_chain: Optional[Callable[[str], None]] = None,
     ) -> None:
         super().__init__(parent)
         self._engine = script_engine or ScriptEngine()
         self._on_execute = on_execute
+        self._on_chain = on_chain
         self._get_current_files = get_current_files
         self._history: List[str] = []
         self._history_index: int = -1
@@ -121,11 +123,17 @@ class ConsolePanel(ctk.CTkFrame):
             # Try as chain command first (contains '|')
             if "|" in cmd:
                 current_files = self._get_current_files() if self._get_current_files else []
-                if current_files:
+                if not current_files:
+                    self.append_output("[INFO] No files loaded — use Load button first\n", "info")
+                    return
+                if self._on_chain is not None:
+                    # Asynchronous dispatch owned by the host app
+                    # (honours busy-lock, abort flag, output dir, macro).
+                    self._on_chain(cmd)
+                else:
+                    # Fallback: synchronous execution (freezes UI).
                     result = self._engine.chain(current_files, cmd)
                     self.append_output(f"{result.message}\n", "success")
-                else:
-                    self.append_output("[INFO] No files loaded — use Load button first\n", "info")
                 return
 
             # Try as simple operator invocation: operator_name key=value ...

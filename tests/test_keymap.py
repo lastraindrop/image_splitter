@@ -1,6 +1,5 @@
 # image_splitter/tests/test_keymap.py
 """Tests for the keymap/keybinding system."""
-import json
 import tempfile
 import unittest
 from pathlib import Path

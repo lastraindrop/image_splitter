@@ -3,6 +3,7 @@ import importlib
 import logging
 import pkgutil
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Generator, List, Tuple
 
@@ -130,9 +131,17 @@ def _execute_via_graph(
     from image_splitter.engine.legacy_adapter import ProcessorNodeAdapter
     from image_splitter.engine.nodes import ImageInputNode, ImageOutputNode
 
+    # V14: unique-per-call temporary block names.  Fixed names like
+    # "__proc_input__" lived in the class-level ImageDataBlock registry,
+    # so two concurrent executions (threaded GUI, plugin background work)
+    # would race: one thread's forget() released the other's image.
+    uid = uuid.uuid4().hex[:8]
+    input_block_name = f"__proc_input_{uid}__"
+    output_block_name = f"__proc_output_{uid}__"
+
     # 1. Create input block (owning a copy so the caller's image survives).
     input_block = ImageDataBlock(
-        name="__proc_input__",
+        name=input_block_name,
         image=image.copy(),
     )
 
@@ -149,20 +158,21 @@ def _execute_via_graph(
     graph.connect(in_node.name, "image", adapter.name, "image")
 
     out_node = ImageOutputNode("__out__")
-    out_node.set_prop("target", "__proc_output__")
+    out_node.set_prop("target", output_block_name)
     graph.add_node(out_node)
     graph.connect(adapter.name, "image", out_node.name, "image")
 
-    # 3. Evaluate the graph.
-    graph.evaluate(force_all=True)
-
-    # 4. Collect results — preserve context dicts for template naming.
-    pairs = adapter.image_context_pairs
-
-    # 5. Clean up temporary blocks (not global blocks).
-    for block_name in (input_block.name, "__proc_output__"):
-        ImageDataBlock.forget(block_name)
-    ImageDataBlock.forget(adapter.name)
+    # 3. Evaluate the graph, collecting per-output context dicts.
+    #    V14-4: cleanup is in try/finally — a processor exception used to
+    #    leak the temporary ImageDataBlocks (with their full-size copies)
+    #    until the next call overwrote them.
+    try:
+        graph.evaluate(force_all=True)
+        pairs = adapter.image_context_pairs
+    finally:
+        # Clean up temporary blocks (not global blocks).
+        for block_name in (input_block_name, output_block_name):
+            ImageDataBlock.forget(block_name)
 
     return pairs
 

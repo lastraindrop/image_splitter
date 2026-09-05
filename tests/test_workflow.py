@@ -4,7 +4,6 @@ Tests complete pipelines: file input → config → process → verify output,
 multi-processor chains, batch with mixed formats, and integration of
 all subsystems (presets, macro, history, chain).
 """
-import io
 
 from PIL import Image
 
@@ -13,7 +12,6 @@ from image_splitter.engine.dispatcher import CommandDispatcher
 from image_splitter.engine.history import HistoryEntry, HistoryManager
 from image_splitter.engine.macro import MacroRecorder
 from image_splitter.engine.presets import save_preset, load_preset, delete_preset
-from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.script_engine import ScriptEngine
 
 from .conftest import (
@@ -22,8 +20,6 @@ from .conftest import (
     make_grayscale_image,
     make_rgba_image,
     make_rgb_image,
-    RED,
-    BLUE,
 )
 
 

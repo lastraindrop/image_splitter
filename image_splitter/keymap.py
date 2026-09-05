@@ -1,4 +1,5 @@
 """Simple keybinding system for CLI and GUI."""
+import copy
 import json
 from pathlib import Path
 from typing import Dict, Optional
@@ -10,11 +11,14 @@ DEFAULT_KEYMAP = {
         "<Control-o>": "select_files",
         "<Control-Return>": "run_batch",
         "<Delete>": "remove_selected",
+        "<Control-Shift-Delete>": "clear_list",
         "<Control-grave>": "toggle_console",
         "<Control-p>": "toggle_pipeline",
-        "<Control-Shift-R>": "toggle_macro",
+        "<Control-Shift-R>": "toggle_macro_record",
         "<Control-z>": "undo_history",
         "<Control-Shift-Z>": "redo_history",
+        "<Control-e>": "open_output_dir",
+        "<Escape>": "stop_tasks",
     }
 }
 
@@ -25,7 +29,12 @@ def get_keymap_path() -> Path:
 
 
 def load_keymap() -> Dict[str, Dict[str, str]]:
-    """Load keymap from file."""
+    """Load keymap from file.
+
+    Returns a deep copy of the defaults when no user keymap exists, so
+    that callers mutating the result (e.g. :func:`bind`) cannot leak
+    changes into the module-level ``DEFAULT_KEYMAP``.
+    """
     path = get_keymap_path()
     if path.exists():
         try:
@@ -33,7 +42,7 @@ def load_keymap() -> Dict[str, Dict[str, str]]:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             pass
-    return DEFAULT_KEYMAP.copy()
+    return copy.deepcopy(DEFAULT_KEYMAP)
 
 
 def save_keymap(keymap: Dict[str, Dict[str, str]]) -> None:
@@ -72,7 +81,7 @@ def lookup(context: str, key_sequence: str) -> Optional[str]:
 
 def reset_to_default() -> None:
     """Reset keymap to default."""
-    save_keymap(DEFAULT_KEYMAP.copy())
+    save_keymap(copy.deepcopy(DEFAULT_KEYMAP))
 
 
 def get_context_actions(context: str) -> Dict[str, str]:

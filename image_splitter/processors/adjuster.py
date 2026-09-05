@@ -65,10 +65,9 @@ class CanvasAdjuster(BaseProcessor):
             height = float(height) if '.' in height else int(height)
 
         orig_w, orig_h = image.size
-        # P1-3: Fix int/float ambiguity.  Previously `isinstance(width, float)`
-        # treated int values as absolute pixels (e.g. width=2 → 2px).
-        # Now: values ≤ 1.0 are always ratios; values > 1 are only absolute
-        # pixels if > min(orig_w, orig_h) — i.e. clearly not a ratio.
+        # P1-3: Resolve int/float ambiguity deterministically:
+        # floats and ints ≤ 1 are ratios (0.5 → 50%, 1 → 100%);
+        # ints > 1 are absolute pixel sizes (800 → 800px).
         def _resolve_dim(val: float | int, orig: int) -> int:
             if isinstance(val, float) or (isinstance(val, int) and val <= 1):
                 return int(orig * float(val))

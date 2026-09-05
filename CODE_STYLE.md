@@ -4,20 +4,20 @@
 
 ---
 
-## Current Status (V12.0 — 2026-06-26)
+## Current Status (V14.0 — 2026-09)
 
 | Dimension | Score | Status |
 |-----------|-------|--------|
 | **Code Style** | ★★★★★ | Google Style compliant |
-| **Type Annotations** | ★★★★★ | mypy 0 errors (83 source files, --ignore-missing-imports) |
-| **Documentation** | ★★★★★ | README/DEVELOPER/PLAN/TECHNICAL synced |
+| **Type Annotations** | ★★★★★ | mypy 0 errors (44 source files, --ignore-missing-imports) |
+| **Documentation** | ★★★★★ | README/DEVELOPER/PLAN/TECHNICAL synced to V14 |
 | **Module Organization** | ★★★★★ | Clean 3-layer + plugins, zero cross-layer deps |
 | **Naming Convention** | ★★★★★ | snake_case IDs, PascalCase classes, consistent |
 | **Error Handling** | ★★★★★ | Fail-Fast + path traversal + cell leak protection |
-| **Test Coverage** | ★★★★★ | 426 tests, 37 files, CI on 12 combos |
+| **Test Coverage** | ★★★★★ | 465 tests, 39 files, CI on 12 combos |
 | **Import Order** | ★★★★★ | stdlib → third-party → local, alphabetized |
 | **Line Length** | ★★★★★ | ≤ 100 cols (Google recommends ≤ 80, relaxed for readability) |
-| **Resource Safety** | ★★★★★ | with Image.open() + finally close + ICC preserve |
+| **Resource Safety** | ★★★★★ | with Image.open() + finally close + ICC preserve (incl. chain paths) |
 
 ---
 
@@ -40,4 +40,4 @@ black image_splitter/
 
 ## Last Updated
 
-2026-06-26 — V12.0: test-suite optimization (shared helpers, duplicate consolidation, delegation guard), P0 UI component test coverage, 426 tests.
+2026-09 — V14.0: interaction-path audit (dashed border, macro chain playback, keymap typing guard, graph exception leak, CLI settings defaults, chain ICC, preset sanitization, UUID temp blocks, GUI file log), 465 tests.

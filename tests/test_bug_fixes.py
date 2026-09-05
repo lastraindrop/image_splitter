@@ -194,7 +194,7 @@ class TestBugFixes(unittest.TestCase):
             self.skipTest("Tk display not available")
         try:
             from image_splitter.gui import ImageSplitterApp
-            app = ImageSplitterApp(root)
+            ImageSplitterApp(root)
             root_binds = root.bind()
             root_delete_binds = [
                 b for b in root_binds if b == "<Delete>"
@@ -237,7 +237,6 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bug16_icc_profile_preserved_after_crop(self):
         """BUG-16: ICC profile must survive through crop/split operations."""
-        import io
         rgb_img = Image.new("RGB", (200, 200), "red")
         fake_icc = b"FAKE_ICC_PROFILE_DATA"
         rgb_img.info["icc_profile"] = fake_icc
@@ -417,7 +416,6 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bug40_registry_duplicate_name_warning(self):
         """BUG-40: Registering duplicate processor name should warn, not silently overwrite."""
-        import logging
         from image_splitter.engine.registry import ProcessorRegistry
         from image_splitter.engine.base import BaseProcessor
 
@@ -479,7 +477,6 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bug32_no_module_reload_on_discovery(self):
         """BUG-32: Module reload should not occur for already-loaded modules."""
-        import importlib
         from unittest.mock import patch
         with patch("importlib.reload") as mock_reload:
             register_all_processors()

@@ -41,6 +41,67 @@ def _parse_set_option(raw: str) -> Tuple[str, str]:
     return key, value
 
 
+IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "bmp", "webp"]
+
+
+def _discover_input_files(
+    input_pattern: str,
+    recursive: bool,
+    output_dir: Path,
+) -> list[Path]:
+    """Resolve an input argument into a sorted list of image files.
+
+    Accepts a file, a directory, or a wildcard glob pattern.  Files inside
+    the output directory (and its subdirectories) are excluded to prevent
+    accidental re-processing loops.
+
+    Args:
+        input_pattern: Raw input argument from the command line.
+        recursive: Whether to search subdirectories recursively.
+        output_dir: Resolved output directory to exclude from results.
+
+    Returns:
+        Deduplicated, sorted list of image file paths (may be empty).
+    """
+    input_files: list[Path] = []
+
+    p = Path(input_pattern)
+    if p.is_dir():
+        pattern = "**/*" if recursive else "*"
+        for ext in IMAGE_EXTENSIONS:
+            input_files.extend(p.glob(f"{pattern}.{ext}"))
+            input_files.extend(p.glob(f"{pattern}.{ext.upper()}"))
+    elif p.is_file():
+        input_files.append(p)
+    else:
+        # Try wildcard parsing
+        glob_matches = glob.glob(input_pattern, recursive=recursive)
+        for g in glob_matches:
+            gp = Path(g)
+            if gp.is_file():
+                if gp.suffix.lower().lstrip('.') in IMAGE_EXTENSIONS:
+                    input_files.append(gp)
+            elif gp.is_dir() and recursive:
+                for ext in IMAGE_EXTENSIONS:
+                    input_files.extend(gp.glob(f"**/*.{ext}"))
+                    input_files.extend(gp.glob(f"**/*.{ext.upper()}"))
+
+    # Deduplicate and sort
+    input_files = sorted(list(set(input_files)))
+
+    # Filter out files in the output directory and its subdirectories
+    # (prevent infinite loops)
+    try:
+        input_files = [
+            f for f in input_files
+            if not f.resolve().is_relative_to(output_dir)
+        ]
+    except ValueError:
+        pass
+
+    return input_files
+
+
 def main() -> None:
     """CLI entry point: parse arguments and dispatch processing."""
     setup_default_logging()
@@ -52,9 +113,14 @@ def main() -> None:
     )
 
     # Core parameters
+    # V14-7: optional positional — informational flags like --preset-list
+    # must not require an input path (argparse validated the positional
+    # before the early-exit branch could run).
     parser.add_argument(
         "input",
-        help="Input file, directory, or wildcard path (e.g., ./pics/*.png)"
+        nargs="?",
+        default=None,
+        help="Input file, directory, or wildcard path (e.g., ./pics/*.png)",
     )
     parser.add_argument(
         "-o", "--output",
@@ -63,8 +129,8 @@ def main() -> None:
     )
     parser.add_argument(
         "-p", "--processor",
-        default=loaded_settings.get("default_processor", "grid_splitter"),
-        help="Processor name (default: read from settings or grid_splitter)"
+        default=None,
+        help="Processor name (default: preset processor, then settings, then grid_splitter)"
     )
     parser.add_argument(
         "--set", dest="set_items", action="append", default=[], type=_parse_set_option,
@@ -142,7 +208,33 @@ def main() -> None:
             print("No presets saved.")
         sys.exit(0)
 
+    if not args.input:
+        parser.error("the following arguments are required: input")
+
     register_all_processors()
+
+    # 1. Resolve output directory
+    output_dir = Path(args.output).resolve()
+
+    # 2. Resolve the effective processor.
+    #    Precedence: explicit -p > preset processor > settings default.
+    explicit_processor = args.processor
+    preset_params: dict[str, Any] = {}
+    if args.preset:
+        data = load_preset(args.preset)
+        if data is None:
+            print(f"[FAIL] Preset not found: {args.preset}")
+            sys.exit(1)
+        preset_processor = data.get("processor", "")
+        preset_params = data.get("params", {})
+        # Only fall back to the preset's processor when the user did not
+        # explicitly pass -p (an explicit -p equal to the settings default
+        # must still win over the preset).
+        if preset_processor and not explicit_processor:
+            args.processor = preset_processor
+    if not args.processor:
+        args.processor = loaded_settings.get("default_processor", "grid_splitter")
+
     processor = None
     try:
         processor = ProcessorRegistry.get(args.processor)
@@ -152,87 +244,29 @@ def main() -> None:
         print(f"[INFO] Available processors: {available}")
         sys.exit(1)
 
-    # 1. Resolve output directory
-    output_dir = Path(args.output).resolve()
+    # 3. Input discovery (shared by normal, script, and chain modes)
+    input_files = _discover_input_files(args.input, args.recursive, output_dir)
 
-    # Script/Chain processing mode
+    if not input_files:
+        print(f"[INFO] No valid image files found: {args.input}")
+        sys.exit(1)
+
+    # Script/Chain processing mode (operates on the discovered files)
     if args.script:
         engine = script_engine.ScriptEngine()
-        result = engine.batch_script(args.script, [str(Path(args.input).resolve())], str(output_dir))
+        result = engine.batch_script(
+            args.script, [str(f) for f in input_files], str(output_dir)
+        )
         print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
         sys.exit(0 if result.success else 1)
 
     if args.chain:
         engine = script_engine.ScriptEngine()
-        result = engine.chain([str(Path(args.input).resolve())], args.chain, str(output_dir))
+        result = engine.chain(
+            [str(f) for f in input_files], args.chain, str(output_dir)
+        )
         print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
         sys.exit(0 if result.success else 1)
-
-    # 2. Environment check and input parsing
-
-    # Handle --preset loading
-    if args.preset:
-        data = load_preset(args.preset)
-        if data is None:
-            print(f"[FAIL] Preset not found: {args.preset}")
-            sys.exit(1)
-        preset_processor = data.get("processor", "")
-        preset_params = data.get("params", {})
-        if preset_processor and args.processor == loaded_settings.get("default_processor", "grid_splitter"):
-            args.processor = preset_processor
-            try:
-                processor = ProcessorRegistry.get(args.processor)
-            except ValueError:
-                print(f"[FAIL] Processor from preset not found: {args.processor}")
-                sys.exit(1)
-        # Merge preset params (user-specified params take precedence)
-        # Preset params are merged into config below at L248
-    else:
-        preset_params = {}
-
-    input_files: list[Path] = []
-    
-    # Allowed extensions
-    exts = ["jpg", "jpeg", "png", "bmp", "webp"]
-    
-    # First check if it is a directory/file that exists directly
-    p = Path(args.input)
-    if p.is_dir():
-        pattern = "**/*" if args.recursive else "*"
-        for ext in exts:
-            input_files.extend(p.glob(f"{pattern}.{ext}"))
-            input_files.extend(p.glob(f"{pattern}.{ext.upper()}"))
-    elif p.is_file():
-        input_files.append(p)
-    else:
-        # Try wildcard parsing
-        glob_matches = glob.glob(args.input, recursive=args.recursive)
-        for g in glob_matches:
-            gp = Path(g)
-            if gp.is_file():
-                if gp.suffix.lower().lstrip('.') in exts:
-                    input_files.append(gp)
-            elif gp.is_dir() and args.recursive:
-                 for ext in exts:
-                    input_files.extend(gp.glob(f"**/*.{ext}"))
-                    input_files.extend(gp.glob(f"**/*.{ext.upper()}"))
-
-    # Deduplicate and sort
-    input_files = sorted(list(set(input_files)))
-
-    # Filter out files in the output directory and its subdirectories
-    # (prevent infinite loops)
-    try:
-        input_files = [
-            f for f in input_files
-            if not f.resolve().is_relative_to(output_dir)
-        ]
-    except ValueError:
-        pass
-
-    if not input_files:
-        print(f"[INFO] No valid image files found: {args.input}")
-        sys.exit(1)
 
     print(
         f"[INFO] Preparing to process {len(input_files)} file(s) "
@@ -247,6 +281,19 @@ def main() -> None:
         config.update(preset_params)
     # Overlay CLI --set items
     config.update({k: v for k, v in args.set_items})
+    # V14-5: grid_splitter default resolution order is now
+    # explicit -r/-c > preset/--set > settings default_rows/default_cols
+    # (previously the settings values only appeared in help text and the
+    # fallback was hardcoded to 3x3).
+    if args.processor == "grid_splitter":
+        if args.rows is not None:
+            config["rows"] = args.rows
+        elif "rows" not in config:
+            config["rows"] = loaded_settings.get("default_rows", 3)
+        if args.cols is not None:
+            config["cols"] = args.cols
+        elif "cols" not in config:
+            config["cols"] = loaded_settings.get("default_cols", 3)
     if args.rows is not None:
         config["rows"] = args.rows
     if args.cols is not None:
@@ -266,17 +313,15 @@ def main() -> None:
         print(f"[FAIL] Parameter configuration error: {e}")
         sys.exit(1)
 
-    if args.processor == "grid_splitter":
-        if "rows" not in config:
-            config["rows"] = 3
-        if "cols" not in config:
-            config["cols"] = 3
-        if "offsets" not in config:
-            config["offsets"] = tuple(args.offset)
-
-    # Handle --preset-save (save before processing)
+    # Handle --preset-save (save before processing).  V14-10: the
+    # session-scoped output_dir/template are noise in a reusable preset
+    # and are excluded from the snapshot.
     if args.preset_save:
-        save_preset(processor.name, args.preset_save, config)
+        preset_snapshot = {
+            k: v for k, v in config.items()
+            if k not in ("output_dir", "template")
+        }
+        save_preset(processor.name, args.preset_save, preset_snapshot)
         print(f"[INFO] Preset '{args.preset_save}' saved for '{processor.name}'")
 
     # 2. Parallel processing

@@ -69,7 +69,8 @@ class TestEngineFramework(unittest.TestCase):
                 self.assertGreater(len(generated), 0, f"Processor {p.name} generated no files")
                 
                 # Clean up for next sub-test
-                for f in generated: f.unlink()
+                for f in generated:
+                    f.unlink()
 
     def test_path_security_regression(self):
         """Rule 3: Key points - path traversal and template safety."""

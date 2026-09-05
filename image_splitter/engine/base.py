@@ -5,18 +5,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 
-class BaseConfig(ABC):
-    """Base configuration abstract base class."""
-    @abstractmethod
-    def validate(self) -> None:
-        """Validate configuration validity.
-
-        Raises:
-            ValueError: Raised when configuration parameters are invalid.
-        """
-        pass
-
-
 class BaseProcessor(ABC):
     """Image processor plugin base class.
     

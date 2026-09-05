@@ -103,7 +103,12 @@ class TextWatermark(BaseProcessor):
         else: 
             x, y = (w - tw) // 2, (h - th) // 2 
 
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, opacity))
+        # V14-11: compensate the glyph-origin offset.  textbbox at (0, 0)
+        # starts at (bbox[0], bbox[1]) (ascender gap for most fonts);
+        # drawing at (x, y) without compensation shifted the *visual*
+        # box away from the anchor, clipping edge-anchored text.
+        draw.text((x - bbox[0], y - bbox[1]), text, font=font,
+                  fill=(255, 255, 255, opacity))
 
         composited = Image.alpha_composite(img, txt_layer)
 
@@ -132,11 +137,16 @@ class TextWatermark(BaseProcessor):
             
             tw, th = 60, 20
             m = 10
-            if anchor == "TL": px, py = x0 + m, y0 + m
-            elif anchor == "TR": px, py = x0 + cw - tw - m, y0 + m
-            elif anchor == "BL": px, py = x0 + m, y0 + ch - th - m
-            elif anchor == "BR": px, py = x0 + cw - tw - m, y0 + ch - th - m
-            else: px, py = x0 + (cw - tw) // 2, y0 + (ch - th) // 2
+            if anchor == "TL":
+                px, py = x0 + m, y0 + m
+            elif anchor == "TR":
+                px, py = x0 + cw - tw - m, y0 + m
+            elif anchor == "BL":
+                px, py = x0 + m, y0 + ch - th - m
+            elif anchor == "BR":
+                px, py = x0 + cw - tw - m, y0 + ch - th - m
+            else:
+                px, py = x0 + (cw - tw) // 2, y0 + (ch - th) // 2
             
             canvas.create_rectangle(
                 px, py, px + tw, py + th, 

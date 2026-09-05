@@ -1,9 +1,8 @@
 """Tests for the user plugin system and auto-discovery."""
-from pathlib import Path
 
 from PIL import Image
 
-from image_splitter.core import process_image, register_all_processors
+from image_splitter.core import process_image
 from image_splitter.engine.registry import ProcessorRegistry
 
 from .conftest import BaseTest, WHITE, make_rgb_image
@@ -72,7 +71,6 @@ class TestPluginSystem(BaseTest):
 
     def test_invert_la_mode_does_not_crash(self) -> None:
         """P0-3 regression: LA mode should not crash on bands[:3] mismatch."""
-        from PIL import ImageOps
         proc = ProcessorRegistry.get("invert_color")
         # LA mode: 2 channels (L + A)
         la_img = Image.new("LA", (10, 10), (128, 255))

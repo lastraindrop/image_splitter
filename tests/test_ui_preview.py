@@ -1,7 +1,6 @@
 """Tests for UI preview."""
 
 import unittest
-from typing import Any
 
 try:
     import tkinter as tk

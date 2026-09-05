@@ -10,7 +10,6 @@ from typing import Any, Callable, Dict, List, Optional
 import customtkinter as ctk
 from tkinter import messagebox
 
-from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.ui.param_widgets import create_param_widget
 
@@ -23,8 +22,14 @@ class PipelineStep:
         self.params = params
 
     def to_spec(self) -> str:
-        """Convert to dispatcher chain spec fragment."""
-        parts = [f"{k}={v!r}" for k, v in self.params.items()]
+        """Convert to dispatcher chain spec fragment.
+
+        Parameters with ``None`` values are skipped — ``repr(None)`` would
+        render as the bare identifier ``None``, which the dispatcher would
+        parse as the *string* ``"None"`` and downstream type coercion
+        would reject it.
+        """
+        parts = [f"{k}={v!r}" for k, v in self.params.items() if v is not None]
         return f"{self.processor_name}({', '.join(parts)})"
 
     def copy(self) -> "PipelineStep":

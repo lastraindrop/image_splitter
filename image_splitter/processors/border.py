@@ -71,20 +71,40 @@ class BorderProcessor(BaseProcessor):
 
         # Expand the image with border
         if style == "double":
-            # P1-2: Fix double border width.  Previous code produced
-            # outer + inner + 1 = width + 1, whereas user asked for
-            # exactly 'width'.  Account for the thin center line.
-            inner_width = max(1, (width - 1) // 2)
-            outer_width = width - inner_width - 1
-            # Outer border
-            result = ImageOps.expand(image, border=outer_width, fill=color)
-            # Inner white gap
-            result = ImageOps.expand(result, border=inner_width, fill="white")
-            # Innermost thin colored line (1px)
-            result = ImageOps.expand(result, border=1, fill=color)
+            # P1-2: Fix double border width.  A 'double' border needs three
+            # zones per side (outer ring + white gap + 1px inner line), so
+            # it requires width >= 3.  For width < 3 the zone math produced
+            # a negative outer width and ``ImageOps.expand(border=-1)``
+            # silently CROPPED image content (verified: 10px red image →
+            # content shrunk to 8px).  Degrade gracefully to a solid
+            # border of the same total width instead.
+            if width >= 3:
+                inner_width = max(1, (width - 1) // 2)
+                outer_width = width - inner_width - 1
+                # Outer border
+                result = ImageOps.expand(image, border=outer_width, fill=color)
+                # Inner white gap
+                result = ImageOps.expand(result, border=inner_width, fill="white")
+                # Innermost thin colored line (1px)
+                result = ImageOps.expand(result, border=1, fill=color)
+            else:
+                result = ImageOps.expand(image, border=width, fill=color)
         elif style == "dashed":
-            # P2-10: Draw actual dash pattern via short line segments.
-            result = ImageOps.expand(image, border=width, fill=color)
+            # P2-10 + V14-1: Draw an actual dash pattern via short line
+            # segments.  The previous implementation expanded the image
+            # with a *solid* border of the same color and then drew dashes
+            # in that same color on top — a visual no-op (dashed was
+            # pixel-identical to solid).  The border region is now filled
+            # with a gap color (transparent for alpha images, white for
+            # opaque ones) so the colored dashes are actually visible.
+            has_alpha = image.mode in ("RGBA", "LA") or (
+                image.mode == "P" and "transparency" in image.info
+            )
+            if has_alpha:
+                base = image.convert("RGBA")
+                result = ImageOps.expand(base, border=width, fill=(255, 255, 255, 0))
+            else:
+                result = ImageOps.expand(image, border=width, fill="white")
             w_final, h_final = result.size
             draw = ImageDraw.Draw(result)
             dash_len = max(4, width * 2)

@@ -2,6 +2,9 @@
 
 > Full architecture audit, engine layer implementation, UI modernization, and roadmap
 > for the `image_splitter` project — aligned with Blender's operator philosophy.
+>
+> **Current state**: V14.0 (package 0.7.1) — see STATUS_V13.md / STATUS_V14.md for
+> the latest audit rounds. This document's roadmap section is kept in sync (§7).
 
 ---
 
@@ -44,7 +47,7 @@ image_splitter/
 │   └── param_widgets.py      # Shared parameter widget factory (customtkinter)
 ├── .github/workflows/
 │   └── ci.yml                # CI: 3 OS × 4 Python = 12 jobs
-└── tests/                    # 426 tests, 37 files
+└── tests/                    # 465 tests, 39 files
     ├── conftest.py           # Shared fixtures (BaseTest, colors, images)
     ├── test_props.py         # Property System: 30 tests
     ├── test_data_blocks.py   # ImageDataBlock: 22 tests
@@ -62,7 +65,7 @@ image_splitter/
 | **Extensibility** | ★★★★★ | New processor = BaseProcessor subclass + drop-in. |
 | **Metadata-Driven UI** | ★★★★★ | Auto-renders from `get_ui_metadata()` + shared widget factory. |
 | **Type Safety** | ★★★★★ | All configs validated. mypy 0 errors. 69 source files. |
-| **Test Coverage** | ★★★★★ | 426 tests across 37 files (engine, processors, UI, integration). |
+| **Test Coverage** | ★★★★★ | 465 tests across 39 files (engine, processors, UI, integration). |
 | **Thread Safety** | ★★★★★ | All 3 worker threads snapshot `current_files`; no race conditions. |
 | **Error Handling** | ★★★★☆ | Save operations now have error handling; image load failures logged. |
 | **Resource Management** | ★★★★★ | `with Image.open()` + finally close + ICC preserve + ChainAsGraph image safety. |
@@ -199,9 +202,8 @@ image_splitter/
 - [x] **Unified execution path** — CommandDispatcher → ChainAsGraph delegation
 - [x] **Thread-safe ImageDataBlock** registry with fine-grained locking
 - [x] **ChainAsGraph all-processor validation** — pixel-identical for all 13 processors
- - [x] 426 tests, 37 test files, mypy 0 errors
+  - [x] mypy 0 errors (465 tests / 39 files as of V14)
 - [x] **GUI param sync fix** — widget→state data flow restored
-- [x] **Border dashed style** — proper dash-pattern implementation
 - [x] **Security hardening** — macro sandbox escape blocked, `type` removed from builtins
 - [x] **Resource management** — image close on cell save, cache eviction, data block replacement
 - [x] **Branching DAG dirty propagation** verified via dedicated test
@@ -209,17 +211,28 @@ image_splitter/
 - [x] **Test-suite optimization (P1)** — shared helpers (TkTestCase base, CLI run_cli, assert_images_equal)
 - [x] **Test-suite optimization (P2)** — duplicate consolidation (make_rgb_image dedup, ChainAsGraph equivalence dedup)
 - [x] **Test-suite optimization (P3)** — CommandDispatcher delegation guard
+- [x] **V13 packaging repair** — standard layout, `pip install -e .` + console scripts verified
+- [x] **V13 interaction fixes** — keymap dead-bindings, border double width<3, console chain threading, CLI dir expansion, preset precedence, chain output format
+- [x] **V14 interaction-path audit** — dashed border visual fix (the V10 "dash-pattern" fix was still a visual no-op: same-color dashes over a same-color solid fill), macro pipeline_chain playback, keymap typing-context guard, `_execute_via_graph` exception leak, CLI settings default_rows/cols, chain ICC preservation, preset name sanitization, preset snapshot noise removal, watermark glyph-origin compensation
+- [x] **V14 concurrency hardening** — UUID-suffixed temp data blocks (fixed names were a latent cross-thread collision)
+- [x] **V14 GUI file logging** — rotating log at ~/.image_splitter/logs/gui.log
 
-### Short-Term (P1-P2)
-- [ ] Migrate existing processors to Property descriptors (use `IntProp`/`FloatProp`/etc. in processor classes)
-- [ ] Visual node graph editor in GUI (drag-connect nodes)
-- [ ] Interactive guide placement on preview canvas (click to add h_lines/v_lines)
-- [ ] Proxy/JPEG preview for large file handling
+### Short-Term (P1-P2) — next 1-2 rounds
+- [ ] **GUI batch parallelization** — reuse the CLI `ProcessPoolExecutor` path; must define abort semantics (cancel pending futures) and keep per-file progress reporting; requires real-machine smoke
+- [ ] **`props.py` keep-or-deprecate decision** — 488 lines with zero consumers since V9; either wire into processors or remove (YAGNI)
+- [ ] **Metadata dual-track unification** — `adjuster`/`geometry` override `get_ui_metadata()` with types diverging from their config models; converge overrides onto dataclass metadata (or lock divergence with tests)
+- [ ] **Release chain** — replace placeholder `example.com` URLs in pyproject; verify sdist/wheel build; tag 0.7.x
+- [ ] **Real-machine GUI smoke** — full manual pass (load → preview → batch → preset → macro → console) before any public release
+- [ ] **Macro sandbox doc downgrade** — README/TECHNICAL describe it as anti-footgun guard, not security boundary (TECHNICAL.md §6 done; README wording pending)
+- [ ] Registry duplicate-name policy — reject or require explicit opt-in instead of warn-and-replace
 
 ### Long-Term (P3+)
-- [ ] Visual node editor with drag-connect (Blender compositor style)
+- [ ] Visual node graph editor with drag-connect (Blender compositor style)
+- [ ] Interactive guide placement (click to add h_lines/v_lines) + proxy preview for large files
 - [ ] Plugin hot-reload without restart
 - [ ] Drag-drop files onto GUI
+- [ ] Per-op contexts (row/col) threaded through chain output naming (chains currently use `{stem}_chain_{idx}`)
+- [ ] Explicit-unit dimension parameter for canvas_adjuster (current int≤1-ratio heuristic is documented but ambiguous)
 - [ ] Distributed processing (RPC-based multi-node)
 - [ ] WASM edition (browser-based offline processing)
 - [ ] Plugin marketplace — community plugin sharing

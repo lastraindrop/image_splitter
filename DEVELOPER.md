@@ -37,7 +37,7 @@ image_splitter/
 │   ├── console.py           # Interactive command console (customtkinter)
 │   ├── pipeline.py          # Visual pipeline chain editor (customtkinter)
 │   └── param_widgets.py     # Shared parameter widget factory (customtkinter)
-├── tests/                   # Test suite (426 tests, 37 files)
+├── tests/                   # Test suite (465 tests, 39 files)
 └── pyproject.toml           # Package configuration
 ```
 
@@ -150,14 +150,22 @@ The `BaseProcessor.get_ui_metadata()` method calls this utility automatically �
 ### 3. Resource Safety
 
 - All image operations use `with Image.open(...)` context management
-- ICC profiles are preserved through all crop/split operations
-- `ChainAsGraph.execute_chain()` protects caller's image via `.copy()` before storing
-- `ImageDataBlock.clear_all()` releases all blocks; multi-output results are safely copied before cleanup
+- ICC profiles are preserved through all crop/split operations **and** the
+  chain paths (`ScriptEngine.chain`, GUI `_run_chain_thread`) since V14
+- Temporary `ImageDataBlock`s use **unique per-call names**
+  (`__proc_input_{uid}__`) — never reuse the `__proc_*` / `__chain_*` prefix
+  for fixed names; the class-level registry is shared global state
+- `_execute_via_graph` and `ChainAsGraph` clean temp blocks in `try/finally` —
+  keep it that way when touching the graph builders
+- `ImageDataBlock.clear_all()` releases all blocks; multi-output results are
+  safely copied before cleanup
 
 ### 4. Thread Safety
 
 - All 3 worker threads (`work_thread`, `_run_chain_thread`, `_console_execute`) receive a snapshot of `self.current_files` before spawning
 - `threading.Event` for graceful abort; no shared mutable state between threads
+- GUI operations are serialized by the `_busy` flag (batch / console /
+  pipeline mutually exclusive)
 
 ### 5. Fail-Fast Validation
 
@@ -172,7 +180,7 @@ All external input must be validated for type, range, and physical validity befo
 ### 6. Code Style
 
 - Follows [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
-- Full mypy static type checking — **zero type errors enforced across 83 source files**
+- Full mypy static type checking — **zero type errors enforced across 44 source files**
 - Imports grouped: standard library → third-party → local, alphabetically
 - Type annotations on all public functions and methods
 - Path handling uses `pathlib.Path` for cross-platform robustness
@@ -253,7 +261,22 @@ class MyCustomConfig:
 
 ### Step 3: Auto-Discovery
 
-`register_all_processors()` scans both `processors/` and `plugins/` directories. No manual registration needed. User plugins are first-class citizens equal to built-in processors.
+`register_all_processors()` scans both `processors/` and `plugins/` directories. No manual registration needed. User plugins are first-class citizens equal to built-in processors (registering a duplicate `name` replaces the built-in with a warning).
+
+## GUI Contributor Notes (V14)
+
+- **New global keybinding?** Bind through `_bind_keymap()` only — the
+  typing-context guard (`_is_typing_context`) suppresses global actions while
+  the user is typing in an entry/combo/text widget. Do not add raw
+  `self.root.bind(...)` calls elsewhere.
+- **New GUI tests that need keyboard focus?** Use `TkTestCase(map_offscreen=True)`
+  from conftest + `focus_set()` on a mapped window. Withdrawn windows cannot
+  take focus and `focus_force()` is unreliable under test runners on Windows.
+- **Persisting user paths/names to disk?** Sanitize with the
+  `presets._ILLEGAL_NAME_CHARS` regex pattern (see `_preset_path`) — preset
+  names with e.g. `:` previously crashed on Windows.
+- **GUI diagnostics** go through `logging` — they land in
+  `~/.image_splitter/logs/gui.log` (rotating) via `setup_file_logging()`.
 
 ## Parameter Consistency Protocol
 
@@ -328,33 +351,29 @@ def save_output(image: Image.Image, output_dir: str, filename: str) -> Path:
 
 ## Roadmap
 
-### Completed (V9.0)
-- [x] 13 built-in processors + 1 plugin example
-- [x] Typed Property descriptor system (7 factory functions)
-- [x] ImageDataBlock (named, versioned, ref-counted)
-- [x] DAG Node Graph + Evaluator (4 nodes, topological sort, dirty propagation, LRU cache)
-- [x] Legacy Adapter (ProcessorNodeAdapter + ChainAsGraph, multi-output support)
-- [x] UI Hardening (thread safety, theme refactoring, widget factory, keymap, error handling)
-- [x] Google Python Style + full mypy compliance (0 errors, 83 source files)
-- [x] 40+ bug fixes
-- [x] Operation history, macro recording, presets, pipeline editor, console
-- [x] CI/CD pipeline (GitHub Actions)
- - [x] 426 tests, 37 test files
-- [x] **Unified execution** — CommandDispatcher delegates to ChainAsGraph
-- [x] **Thread-safe ImageDataBlock** registry
-- [x] **ChainAsGraph all-processor pixel accuracy verified** (22 integration tests)
-- [x] **P0 UI component test coverage** (param_widgets, console, pipeline, GUI param sync)
-- [x] **Test-suite optimization** (shared fixtures, duplicate consolidation, delegation guard — 426 tests)
+> Living roadmap maintained in [PLAN.md](./PLAN.md); audit history in
+> STATUS_V11–V14. Summary as of V14.0 (0.7.1):
+
+### Completed (V13/V14)
+- [x] Packaging repair (standard layout) — V13
+- [x] Unified execution with zero second path — CommandDispatcher delegates
+- [x] Interaction-path audit: dashed border, macro chain playback, keymap
+      typing guard, graph exception leak, CLI settings defaults, chain ICC,
+      preset sanitization, UUID temp blocks, GUI file log — V14
+- [x] 465 tests / 39 files, mypy 0 errors, ruff clean
 
 ### Short-Term
-- [ ] Migrate processors to Property descriptors (IntProp/FloatProp/etc.)
-- [ ] Visual node graph editor in GUI (drag-connect nodes)
-- [ ] Interactive guide placement on preview canvas
+- [ ] GUI batch parallelization (ProcessPoolExecutor + abort semantics)
+- [ ] `props.py` keep-or-deprecate decision
+- [ ] Release chain: real repo URLs, sdist/wheel build verification
+- [ ] Real-machine GUI smoke pass before release
+- [ ] Unify the two metadata tracks (dataclass metadata vs get_ui_metadata overrides)
 
 ### Long-Term
-- [ ] Distributed processing (RPC-based multi-node)
-- [ ] Plugin hot-reload without restart
-- [ ] WASM edition (browser-based offline processing)
+- [ ] Visual node graph editor (drag-connect)
+- [ ] Plugin hot-reload
+- [ ] Per-op contexts (row/col) threaded through chain naming
+- [ ] Distributed processing / WASM edition / plugin marketplace
 
 ---
 
