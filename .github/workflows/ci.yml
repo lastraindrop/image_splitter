@@ -13,6 +13,7 @@ on:
       - '**.md'
       - '**.txt'
       - '.gitignore'
+  workflow_dispatch:
 
 jobs:
   test:
