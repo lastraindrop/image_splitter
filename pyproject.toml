@@ -45,11 +45,10 @@ gui = ["customtkinter>=5.2.0"]
 image-splitter = "image_splitter.cli:main"
 image-splitter-gui = "image_splitter.gui:main"
 
-# NOTE: add your real repository URLs here before publishing to PyPI:
-# [project.urls]
-# Homepage = "https://github.com/<you>/image-splitter"
-# Repository = "https://github.com/<you>/image-splitter"
-# Issues = "https://github.com/<you>/image-splitter/issues"
+[project.urls]
+Homepage = "https://github.com/lastraindrop/image_splitter"
+Repository = "https://github.com/lastraindrop/image_splitter"
+Issues = "https://github.com/lastraindrop/image_splitter/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
