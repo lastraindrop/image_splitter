@@ -21,6 +21,10 @@ class ConsolePanel(ctk.CTkFrame):
         - Tab completion for operator names
         - Direct operator invocation and chain execution
 
+    The ``on_execute`` handler returns ``False`` to reject the
+    invocation (e.g. no files loaded) — the "[OK] Dispatched"
+    confirmation is suppressed for rejected dispatches.
+
     Usage:
         console = ConsolePanel(parent, on_execute=callback)
         console.pack(fill="both", expand=True)
@@ -30,7 +34,7 @@ class ConsolePanel(ctk.CTkFrame):
         self,
         parent: Any,
         script_engine: Optional[ScriptEngine] = None,
-        on_execute: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_execute: Optional[Callable[[str, Dict[str, Any]], bool]] = None,
         theme: Optional[Any] = None,
         font: tuple = ("Consolas", 10),
         get_current_files: Optional[Callable[[], List[str]]] = None,
@@ -150,8 +154,11 @@ class ConsolePanel(ctk.CTkFrame):
                     config[key] = self._coerce_value(value)
 
             if self._on_execute:
-                self._on_execute(operator, config)
-                self.append_output(f"[OK] Dispatched: {operator}\n", "success")
+                accepted = self._on_execute(operator, config)
+                # Handlers may reject the invocation (e.g. no files
+                # loaded) — only confirm genuinely dispatched work.
+                if accepted is not False:
+                    self.append_output(f"[OK] Dispatched: {operator}\n", "success")
             else:
                 self.append_output("[INFO] No execute handler configured\n", "info")
 

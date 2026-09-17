@@ -164,5 +164,10 @@ def import_preset(file_path: str) -> Optional[str]:
     if not name or not processor:
         return None
 
-    save_preset(processor, name, params)
+    # V15: save_preset raises OSError on unwritable preset dirs —
+    # surface it as a failed import instead of crashing the caller.
+    try:
+        save_preset(processor, name, params)
+    except (IOError, OSError):
+        return None
     return name

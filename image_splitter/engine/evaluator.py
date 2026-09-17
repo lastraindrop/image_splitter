@@ -267,14 +267,27 @@ class EvaluationCache:
         self._store[key] = image
 
     def invalidate(self, node_name: str) -> None:
-        """Remove all cache entries for a given node name."""
+        """Remove all cache entries for a given node name.
+
+        V16 (L-6): evicted images are closed, matching the eviction
+        path in :meth:`put`.
+        """
         keys_to_remove = [k for k in self._store if k[0] == node_name]
         for key in keys_to_remove:
-            del self._store[key]
+            img = self._store.pop(key)
+            try:
+                img.close()
+            except Exception:
+                pass
 
     def clear(self) -> None:
-        """Remove all entries from the cache."""
-        self._store.clear()
+        """Remove all entries from the cache (closing held images)."""
+        while self._store:
+            _, img = self._store.popitem()
+            try:
+                img.close()
+            except Exception:
+                pass
 
     def __len__(self) -> int:
         return len(self._store)

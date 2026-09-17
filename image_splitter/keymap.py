@@ -34,12 +34,22 @@ def load_keymap() -> Dict[str, Dict[str, str]]:
     Returns a deep copy of the defaults when no user keymap exists, so
     that callers mutating the result (e.g. :func:`bind`) cannot leak
     changes into the module-level ``DEFAULT_KEYMAP``.
+
+    V15: a keymap.json containing valid-but-non-dict JSON previously
+    leaked through and crashed ``km.get("global")`` with AttributeError.
+    Non-dict payloads now fall back to defaults.
     """
     path = get_keymap_path()
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+            import logging
+            logging.getLogger(__name__).warning(
+                "keymap.json is not a JSON object — using defaults"
+            )
         except (json.JSONDecodeError, IOError):
             pass
     return copy.deepcopy(DEFAULT_KEYMAP)

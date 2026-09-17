@@ -26,11 +26,30 @@ class ProcessorRegistry:
         return cls._instance
 
     @classmethod
-    def register(cls, processor: Any) -> None:
-        """Register a processor."""
+    def register(cls, processor: Any, *, allow_override: bool = False) -> None:
+        """Register a processor.
+
+        Args:
+            processor: The processor instance to register.
+            allow_override: Permit replacing an already-registered name.
+                Defaults to ``False`` — accidental duplicate registration
+                raises instead of silently shadowing a processor (V15).
+                User plugins are scanned with ``allow_override=True`` so
+                they can deliberately override built-in processors.
+
+        Raises:
+            ValueError: If *processor.name* is already registered and
+                *allow_override* is ``False``.
+        """
         inst = cls.get_instance()
         if processor.name in inst._processors:
             old = inst._processors[processor.name]
+            if not allow_override:
+                raise ValueError(
+                    f"Processor '{processor.name}' is already registered "
+                    f"({type(old).__name__}); pass allow_override=True to "
+                    f"replace it explicitly"
+                )
             logger.warning(
                 "Processor '%s' re-registered: %s replaced by %s",
                 processor.name,

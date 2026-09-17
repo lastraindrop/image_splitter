@@ -3,7 +3,7 @@ import argparse
 import glob
 import multiprocessing
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from collections import Counter
 from pathlib import Path
 from typing import Any, Tuple
 
@@ -15,7 +15,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from image_splitter import script_engine, settings
-from image_splitter.core import process_image, register_all_processors
+from image_splitter.core import register_all_processors, run_parallel_batch
 from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.presets import list_presets as _list_presets, load_preset, save_preset
 from image_splitter.engine.registry import ProcessorRegistry
@@ -67,10 +67,13 @@ def _discover_input_files(
 
     p = Path(input_pattern)
     if p.is_dir():
-        pattern = "**/*" if recursive else "*"
-        for ext in IMAGE_EXTENSIONS:
-            input_files.extend(p.glob(f"{pattern}.{ext}"))
-            input_files.extend(p.glob(f"{pattern}.{ext.upper()}"))
+        # V16: iterate + suffix filter instead of per-extension globs —
+        # per-ext globbing missed mixed-case names like `.Jpg` on
+        # case-sensitive filesystems.
+        it = p.rglob("*") if recursive else p.glob("*")
+        for f in it:
+            if f.is_file() and f.suffix.lstrip(".").lower() in IMAGE_EXTENSIONS:
+                input_files.append(f)
     elif p.is_file():
         input_files.append(p)
     else:
@@ -82,9 +85,9 @@ def _discover_input_files(
                 if gp.suffix.lower().lstrip('.') in IMAGE_EXTENSIONS:
                     input_files.append(gp)
             elif gp.is_dir() and recursive:
-                for ext in IMAGE_EXTENSIONS:
-                    input_files.extend(gp.glob(f"**/*.{ext}"))
-                    input_files.extend(gp.glob(f"**/*.{ext.upper()}"))
+                for f in gp.rglob("*"):
+                    if f.is_file() and f.suffix.lstrip(".").lower() in IMAGE_EXTENSIONS:
+                        input_files.append(f)
 
     # Deduplicate and sort
     input_files = sorted(list(set(input_files)))
@@ -251,6 +254,18 @@ def main() -> None:
         print(f"[INFO] No valid image files found: {args.input}")
         sys.exit(1)
 
+    # L-1 pre-flight: files sharing a stem render identical output names
+    # ({index} resets per file).  Warn and point at the {batch} escape.
+    stems = [f.stem for f in input_files]
+    dupes = {s for s, n in Counter(stems).items() if n > 1}
+    if dupes:
+        sample = ", ".join(sorted(dupes)[:3])
+        print(
+            f"[WARN] {len(dupes)} duplicated stem(s) found ({sample}...) — "
+            f"outputs may overwrite each other.  Add {{batch}} to the "
+            f"--template to keep every file's output distinct."
+        )
+
     # Script/Chain processing mode (operates on the discovered files)
     if args.script:
         engine = script_engine.ScriptEngine()
@@ -268,6 +283,8 @@ def main() -> None:
         print(f"[{'OK' if result.success else 'FAIL'}] {result.message}")
         sys.exit(0 if result.success else 1)
 
+    # 2. Parallel processing via the shared batch runner (V16 — same
+    #    concurrency/abort semantics as the GUI).
     print(
         f"[INFO] Preparing to process {len(input_files)} file(s) "
         f"(concurrency: {args.jobs})...\n"
@@ -324,29 +341,25 @@ def main() -> None:
         save_preset(processor.name, args.preset_save, preset_snapshot)
         print(f"[INFO] Preset '{args.preset_save}' saved for '{processor.name}'")
 
-    # 2. Parallel processing
-    with ProcessPoolExecutor(max_workers=args.jobs) as executor:
-        futures = [
-            executor.submit(process_image, str(f), processor.name, config)
-            for f in input_files
-        ]
+    def _print_result(path: str, ok: bool, msg: str) -> None:
+        status = "[OK]" if ok else "[FAIL]"
+        print(f"{status} {Path(path).name}: {msg}")
 
-        for f_path, future in zip(input_files, futures):
-            try:
-                success, msg = future.result()
-                status = "[OK]" if success else "[FAIL]"
-                print(f"{status} {f_path.name}: {msg}")
-                if success:
-                    total_success += 1
-            except Exception as e:
-                print(f"[FAIL] {f_path.name}: Runtime exception - {e}")
+    success_count, total, _aborted = run_parallel_batch(
+        [str(f) for f in input_files],
+        processor.name,
+        config,
+        jobs=args.jobs,
+        on_result=_print_result,
+    )
+    total_success = success_count
 
     print("-" * 30)
     print(
-        f"[DONE] Completed! Success: {total_success} / Total: {len(input_files)}"
+        f"[DONE] Completed! Success: {total_success} / Total: {total}"
     )
-    
-    if total_success < len(input_files):
+
+    if total_success < total:
         sys.exit(1)
 
 if __name__ == "__main__":

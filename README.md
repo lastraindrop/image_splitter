@@ -1,33 +1,44 @@
 # Image Splitter Pro
 
-A lightweight, modular image processing framework with Blender-like operator philosophy and unified Node Graph execution. Supports grid splitting, custom guide-based cutting, resizing, canvas adjustment, rounded corners, smart crop, borders, and more — with modern customtkinter GUI and auto-generated UI metadata.
+A lightweight, modular image processing framework with Blender-like operator philosophy and unified Node Graph execution. Supports grid splitting, custom guide-based cutting, resizing, canvas adjustment, rounded corners, smart crop, borders, and more �?with modern customtkinter GUI and auto-generated UI metadata.
 
 ## Features
 
 ### Core Philosophy
-- **Unified Node Graph Execution**: All processor invocations flow through the same DAG-based Node Graph engine — single execution path for CLI, GUI, and scripting.
+- **Unified Node Graph Execution**: All processor invocations flow through the same DAG-based Node Graph engine �?single execution path for CLI, GUI, and scripting.
 - **Modern GUI**: customtkinter with dark theme, framework-agnostic GuiState ViewModel for future Dear PyGui migration.
 - **Metadata-Driven UI**: GUI auto-generates parameter panels from dataclass field annotations. New features = drop-in plugin.
 - **Everything as Operators**: Complete decoupling between core logic and UI. Blender-style operator invocation logs and command dispatching.
-- **Typed Property System**: `IntProp`, `FloatProp`, `BoolProp`, `EnumProp`, `StrProp`, `ListProp`, `ColorProp` descriptors with coercion, validation, and update callbacks. (Experimental — reserved for future Node Graph UI.)
-- **Image Data Blocks**: Named, versioned, reference-counted image containers with class-level registry — Blender ID-style.
+- **Typed Property System**: `IntProp`, `FloatProp`, `BoolProp`, `EnumProp`, `StrProp`, `ListProp`, `ColorProp` descriptors with coercion, validation, and update callbacks. (Experimental �?reserved for future Node Graph UI.)
+- **Image Data Blocks**: Named, versioned, reference-counted image containers with class-level registry �?Blender ID-style.
 - **Operation History**: Undo/Redo stack records every operation, exportable as JSON log.
-- **Macro Recording**: One-click recording generates reusable Python scripts with restricted execution. Note: the restriction is an anti-footgun guard, not a security boundary — only play back macros you authored.
+- **Macro Recording**: One-click recording generates reusable Python scripts with restricted execution. Note: the restriction is an anti-footgun guard, not a security boundary �?only play back macros you authored.
 - **Parameter Presets**: Save/load named parameter presets per operator (CLI `--preset` and GUI).
 - **Visual Pipeline Editor**: Compose multi-step operator chains via GUI (Ctrl+P).
 - **Interactive Console**: Built-in command console with tab completion and history (Ctrl+`).
 - **Plugin System**: Drop a `BaseProcessor` subclass in `plugins/` and it's auto-discovered.
-- **High-Performance Engine**: CLI version uses multi-processing by default (4-8x speedup).
+- **High-Performance Engine**: CLI and GUI batch runs share a multi-processing runner (`max_workers` setting, CPU-core default) with cancel-pending abort semantics.
 - **Industrial-Grade Safety**: Strict Pillow handle management with Path Traversal interception and cell leak protection.
 - **Cross-Platform**: Full Windows/macOS/Linux support with platform-aware font loading.
-- **Static Type Checking**: Full mypy compliance with `--ignore-missing-imports` — zero type errors across 44 source files.
+- **Static Type Checking**: Full mypy compliance with `--ignore-missing-imports` �?zero type errors across 44 source files.
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-pip install -e .
+pip install -e .            # CLI only (Pillow-only core)
+pip install -e ".[gui]"     # CLI + GUI (adds customtkinter)
+```
+
+### Standalone Executable (no Python required)
+
+A single-file desktop build is supported via PyInstaller:
+
+```bash
+pip install pyinstaller pillow customtkinter
+pyinstaller packaging/image_splitter.spec
+# �?dist/ImageSplitterPro(.exe)
 ```
 
 ### GUI Mode
@@ -70,12 +81,21 @@ python -m image_splitter.cli input.png --chain "resizer(width=0.5)|grid_splitter
 python -m image_splitter.cli input.png --chain "custom_splitter(h_lines=[100,300],v_lines=[200,400])|resizer(width=0.5)"
 ```
 
+**Chain semantics (V15)**: operators apply per image with flat-map fan-out.
+A splitter in the *middle* of a chain fans out �?every following operator is
+applied to *each* cell and all results are collected:
+
+```bash
+# 2x2 split �?each cell resized �?4 outputs (not 1)
+python -m image_splitter.cli input.png --chain "grid_splitter(rows=2,cols=2)|resizer(width=0.5)"
+```
+
 ## Available Processors
 
 | Processor | Description |
 |-----------|-------------|
 | `grid_splitter` | Split image into uniform grid (rows x cols) |
-| `custom_splitter` | Custom guide-based splitting — arbitrary h_lines + v_lines at any pixel positions |
+| `custom_splitter` | Custom guide-based splitting �?arbitrary h_lines + v_lines at any pixel positions |
 | `resizer` | Proportional image scaling |
 | `canvas_adjuster` | Canvas padding, cropping, background fill |
 | `format_converter` | WebP/JPEG/PNG/BMP format conversion with quality control |
@@ -86,7 +106,7 @@ python -m image_splitter.cli input.png --chain "custom_splitter(h_lines=[100,300
 | `text_watermark` | Add semi-transparent text watermark |
 | `rounded_corner` | Rounded corner crop with configurable radius |
 | `border` | Add solid/dashed/double border with configurable width and color |
-| `smart_crop` | Content-aware crop using alpha channel or luminance edge detection |
+| `smart_crop` | Content-aware crop using alpha channel or luminance edge detection (background-agnostic: works on dark *and* light backgrounds) |
 
 ## Template Placeholders
 
@@ -95,6 +115,7 @@ python -m image_splitter.cli input.png --chain "custom_splitter(h_lines=[100,300
 | `{filename}` | Original filename without extension |
 | `{row}` / `{col}` | Current row/column number (1-based) |
 | `{index}` | Global sequence number (01-based, zero-padded) |
+| `{batch}` | 1-based sequence of the input file within the batch �?use it to disambiguate files that share a stem (`{index}` resets per file) |
 | `{w}` | Processed image width in pixels |
 | `{h}` | Processed image height in pixels |
 | `{ext}` | File extension |
@@ -120,9 +141,21 @@ Settings are persisted to `~/.image_splitter/settings.json`:
 
 `default_rows` / `default_cols` are the CLI grid fallbacks (explicit `-r/-c`
 and presets take precedence); `template` is the GUI's startup filename
-template; `window_geometry` restores the GUI window size. GUI diagnostics
+template; `window_geometry` restores the GUI window size. `max_workers`
+controls batch concurrency for **both** CLI (`-j` default) and GUI batch
+runs (`0` = CPU core count). GUI diagnostics
 are additionally logged to `~/.image_splitter/logs/gui.log` (rotating,
 1 MB × 3 backups).
+
+## Batch Semantics
+
+- **Concurrency**: CLI and GUI share one parallel runner
+  (`core.run_parallel_batch`). GUI batch runs are parallel by default;
+  Abort cancels pending files and lets the in-flight file finish.
+- **Same-stem safety**: files that share a stem produce colliding output
+  names (`{index}` resets per file). The CLI warns about this at
+  pre-flight; add `{batch}` to your template to keep every file's
+  output distinct.
 
 ## Keybindings
 
@@ -166,40 +199,40 @@ Default keybindings in `~/.image_splitter/keymap.json`:
 image_splitter/                # repository root
 ├── pyproject.toml             # Package configuration
 ├── image_splitter/            # the package
-│   ├── py.typed               # PEP 561 type marker
-│   ├── cli.py                # CLI entry point (multiprocessing + presets)
-│   ├── gui.py                # GUI entry point (customtkinter + GuiState ViewModel)
-│   ├── core.py               # Core processing pipeline + unified Node Graph execution
-│   ├── settings.py           # User settings persistence
-│   ├── keymap.py             # Keybinding system
-│   ├── script_engine.py      # Batch scripting engine
-│   ├── logging_config.py     # Logging configuration
-│   ├── models.py             # Configuration dataclasses (13 models)
-│   ├── engine/
-│   │   ├── base.py           # BaseProcessor abstract class
-│   │   ├── registry.py       # Processor registry (thread-safe singleton)
-│   │   ├── dispatcher.py     # Command dispatcher + chain execution
-│   │   ├── config_coercion.py # Parameter type coercion (int/float/bool/enum/list/str)
-│   │   ├── history.py        # Operation history stack (undo/redo)
-│   │   ├── macro.py          # Macro recording & sandboxed playback
-│   │   ├── presets.py        # Parameter presets (save/load/import/export)
-│   │   ├── props.py          # Typed Property descriptor system (Blender bpy.props style) — Experimental
-│   │   ├── data_blocks.py    # ImageDataBlock (named, versioned, ref-counted)
-│   │   ├── nodes.py          # DAG node graph (Socket, BaseNode, 4 concrete nodes)
-│   │   ├── evaluator.py      # NodeGraph evaluator + LRU EvaluationCache
-│   │   ├── legacy_adapter.py # ProcessorNodeAdapter + ChainAsGraph (unified execution bridge)
-│   │   └── _ui_metadata_util.py # Auto-generate UI metadata from dataclass field annotations
-│   ├── processors/           # Processor plugins (13 built-in)
-│   ├── plugins/              # User plugin directory (auto-discovered)
-│   │   └── example_plugin.py # Example: invert colors plugin
-│   └── ui/
-│       ├── _state.py         # GuiState — framework-agnostic ViewModel
-│       ├── console.py        # Interactive command console panel (customtkinter)
-│       ├── pipeline.py       # Visual pipeline chain editor (customtkinter)
-│       └── param_widgets.py  # Shared parameter widget factory (customtkinter)
+�?  ├── py.typed               # PEP 561 type marker
+�?  ├── cli.py                # CLI entry point (multiprocessing + presets)
+�?  ├── gui.py                # GUI entry point (customtkinter + GuiState ViewModel)
+�?  ├── core.py               # Core processing pipeline + unified Node Graph execution
+�?  ├── settings.py           # User settings persistence
+�?  ├── keymap.py             # Keybinding system
+�?  ├── script_engine.py      # Batch scripting engine
+�?  ├── logging_config.py     # Logging configuration
+�?  ├── models.py             # Configuration dataclasses (13 models)
+�?  ├── engine/
+�?  �?  ├── base.py           # BaseProcessor abstract class
+�?  �?  ├── registry.py       # Processor registry (thread-safe singleton)
+�?  �?  ├── dispatcher.py     # Command dispatcher + chain execution
+�?  �?  ├── config_coercion.py # Parameter type coercion (int/float/bool/enum/list/str)
+�?  �?  ├── history.py        # Operation history stack (undo/redo)
+�?  �?  ├── macro.py          # Macro recording & sandboxed playback
+�?  �?  ├── presets.py        # Parameter presets (save/load/import/export)
+�?  �?  ├── props.py          # Typed Property descriptor system (Blender bpy.props style) �?Experimental
+�?  �?  ├── data_blocks.py    # ImageDataBlock (named, versioned, ref-counted)
+�?  �?  ├── nodes.py          # DAG node graph (Socket, BaseNode, 4 concrete nodes)
+�?  �?  ├── evaluator.py      # NodeGraph evaluator + LRU EvaluationCache
+�?  �?  ├── legacy_adapter.py # ProcessorNodeAdapter + ChainAsGraph (unified execution bridge)
+�?  �?  └── _ui_metadata_util.py # Auto-generate UI metadata from dataclass field annotations
+�?  ├── processors/           # Processor plugins (13 built-in)
+�?  ├── plugins/              # User plugin directory (auto-discovered)
+�?  �?  └── example_plugin.py # Example: invert colors plugin
+�?  └── ui/
+�?      ├── _state.py         # GuiState �?framework-agnostic ViewModel
+�?      ├── console.py        # Interactive command console panel (customtkinter)
+�?      ├── pipeline.py       # Visual pipeline chain editor (customtkinter)
+�?      └── param_widgets.py  # Shared parameter widget factory (customtkinter)
 ├── .github/workflows/
-│   └── ci.yml                # CI/CD pipeline (multi-OS, Python 3.10-3.13)
-└── tests/                    # Test suite (465 tests, 39 files)
+�?  └── ci.yml                # CI/CD pipeline (multi-OS, Python 3.10-3.13)
+└── tests/                    # Test suite (498 tests, 41 files)
 ```
 
 ## Engine Layer
@@ -208,14 +241,14 @@ The engine layer provides a Blender-inspired foundation with unified execution:
 
 | Module | Purpose |
 |--------|---------|
-| `_ui_metadata_util.py` | Auto-generates `get_ui_metadata()` from dataclass `field(metadata={"label": ...})` — single source of truth |
-| `props.py` | Typed Property descriptors (Experimental — reserved for future Node Graph UI) |
-| `data_blocks.py` | `ImageDataBlock` — named, versioned, reference-counted image containers |
+| `_ui_metadata_util.py` | Auto-generates `get_ui_metadata()` from dataclass `field(metadata={"label": ...})` �?single source of truth |
+| `props.py` | Typed Property descriptors (Experimental �?reserved for future Node Graph UI) |
+| `data_blocks.py` | `ImageDataBlock` �?named, versioned, reference-counted image containers |
 | `nodes.py` | DAG primitives: `SocketType`, `Socket`, `Connection`, `BaseNode`, concrete nodes |
-| `evaluator.py` | `NodeGraph` — topological evaluation, dirty propagation; `EvaluationCache` — LRU cache |
-| `legacy_adapter.py` | `ProcessorNodeAdapter` wraps processors as nodes; `ChainAsGraph` — unified chain execution |
+| `evaluator.py` | `NodeGraph` �?topological evaluation, dirty propagation; `EvaluationCache` �?LRU cache |
+| `legacy_adapter.py` | `ProcessorNodeAdapter` wraps processors as nodes; `ChainAsGraph` �?unified chain execution |
 
-All processor invocations use `_execute_via_graph()` — a single Node Graph path shared by `process_image()` and `ChainAsGraph.execute_chain()`.
+All processor invocations use `_execute_via_graph()` �?a single Node Graph path shared by `process_image()` and `ChainAsGraph.execute_chain()`.
 
 ## Development
 
@@ -227,7 +260,7 @@ See [DEVELOPER.md](./DEVELOPER.md) for details and [TECHNICAL.md](./TECHNICAL.md
 
 - Python 3.10+
 - Pillow 10.2.0+
-- customtkinter 5.2.0+ (GUI only — optional)
+- customtkinter 5.2.0+ (GUI only �?optional)
 
 ## License
 
@@ -235,7 +268,7 @@ MIT
 
 ## Test Suite
 
-The project includes **465 tests** across 39 test files:
+The project includes **498 tests** across 41 test files:
 
 | Test File | Description |
 |-----------|-------------|
@@ -278,15 +311,14 @@ The project includes **465 tests** across 39 test files:
 | `test_ui_preview.py` | Preview rendering: all processor draw_preview, graceful dirty-data handling |
 | `test_v13_fixes.py` | V13 audit regressions: packaging, keymap coverage, border double, console chain, CLI dir expansion, preset precedence, chain format (17 tests) |
 | `test_v14_fixes.py` | V14 audit regressions: border dashed, macro chain playback, keymap typing guard, graph cleanup, CLI settings defaults, chain ICC, preset sanitization (22 tests) |
+| `test_v15_fixes.py` | V15 audit regressions: chain fan-out, copy-count reduction, GUI startup param panel, config robustness, smart_crop light backgrounds, import_preset guard (16 tests) |
+| `test_v16_fixes.py` | V16 deployability regressions: parallel runner semantics, `{batch}` placeholder, case-insensitive discovery, duplicate-stem warning, registry policy, BlendNode hardening, cache close consistency, console reject suppression (17 tests) |
 | `test_workflow.py` | Full end-to-end workflows: chains, batch, presets+macro+history, boundary values |
 
 Run tests:
 ```bash
-# Full suite
+# Full suite (GUI tests skip automatically if the [gui] extra is absent)
 python -m pytest tests/ -v
-
-# Non-GUI only (for CI)
-python -m pytest tests/ -v -k "not gui and not ui_preview"
 
 # Type check
 python -m mypy image_splitter --ignore-missing-imports

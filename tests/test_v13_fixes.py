@@ -113,7 +113,10 @@ class TestPipelineStepNoneFiltering(unittest.TestCase):
     """PIPE-1: None params must not leak into chain specs."""
 
     def test_to_spec_skips_none(self):
-        from image_splitter.ui.pipeline import PipelineStep
+        try:
+            from image_splitter.ui.pipeline import PipelineStep
+        except ImportError:  # pragma: no cover - depends on environment
+            self.skipTest("customtkinter (GUI extra) is not installed")
         step = PipelineStep("resizer", {"width": 0.5, "height": None})
         spec = step.to_spec()
         self.assertIn("width=0.5", spec)

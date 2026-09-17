@@ -27,13 +27,24 @@ def get_settings_path() -> Path:
 
 
 def load_settings() -> Dict[str, Any]:
-    """Load settings from file."""
+    """Load settings from file.
+
+    V15: a settings.json containing valid-but-non-dict JSON (e.g. a list
+    or a bare string) previously raised TypeError at ``dict | value``
+    and crashed startup.  Malformed files now fall back to defaults.
+    """
     path = get_settings_path()
     if path.exists():
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return DEFAULT_SETTINGS | json.load(f)
-        except (json.JSONDecodeError, IOError):
+                data = json.load(f)
+            if isinstance(data, dict):
+                return DEFAULT_SETTINGS | data
+            import logging
+            logging.getLogger(__name__).warning(
+                "settings.json is not a JSON object — using defaults"
+            )
+        except (json.JSONDecodeError, IOError, TypeError):
             pass
     return DEFAULT_SETTINGS.copy()
 

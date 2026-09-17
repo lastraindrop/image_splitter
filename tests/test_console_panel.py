@@ -1,9 +1,19 @@
-"""Tests for the embedded GUI command console."""
+"""Tests for the embedded GUI command console.
+
+customtkinter is an optional dependency (``[gui]`` extra, not installed by
+CI's ``[dev]``) — the import is guarded and tests skip when unavailable.
+"""
 
 import unittest
 
-from image_splitter.ui.console import ConsolePanel
 from .conftest import TkTestCase
+
+try:
+    import customtkinter as ctk  # noqa: F401
+
+    from image_splitter.ui.console import ConsolePanel
+except ImportError:  # pragma: no cover - depends on environment
+    ConsolePanel = None  # type: ignore[assignment,misc]
 
 
 class FakeEngine:
@@ -22,6 +32,8 @@ class FakeEngine:
         return ["grid_splitter", "resizer"]
 
 
+@unittest.skipIf(ConsolePanel is None,
+                 "customtkinter (GUI extra) is not installed")
 class TestConsolePanel(TkTestCase):
     register_processors = True
 

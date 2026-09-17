@@ -1,12 +1,25 @@
-"""Tests for the visual pipeline editor state model and chain output."""
+"""Tests for the visual pipeline editor state model and chain output.
+
+customtkinter is an optional dependency (``[gui]`` extra, not installed by
+CI's ``[dev]``) — the import is guarded and tests skip when unavailable.
+"""
 
 import unittest
 from unittest.mock import patch
 
-from image_splitter.ui.pipeline import PipelineEditor, PipelineStep
 from .conftest import TkTestCase
 
+try:
+    import customtkinter as ctk  # noqa: F401
 
+    from image_splitter.ui.pipeline import PipelineEditor, PipelineStep
+except ImportError:  # pragma: no cover - depends on environment
+    PipelineEditor = None  # type: ignore[assignment,misc]
+    PipelineStep = None  # type: ignore[assignment,misc]
+
+
+@unittest.skipIf(PipelineStep is None,
+                 "customtkinter (GUI extra) is not installed")
 class TestPipelineStep(unittest.TestCase):
     def test_to_spec_quotes_values_for_dispatcher_chain(self):
         step = PipelineStep("grid_splitter", {"rows": 2, "template": "tile_{index}"})
@@ -26,6 +39,8 @@ class TestPipelineStep(unittest.TestCase):
         self.assertEqual(copied.params["width"], 0.25)
 
 
+@unittest.skipIf(PipelineEditor is None,
+                 "customtkinter (GUI extra) is not installed")
 class TestPipelineEditor(TkTestCase):
     register_processors = True
 

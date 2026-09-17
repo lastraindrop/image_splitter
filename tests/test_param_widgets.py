@@ -1,11 +1,23 @@
-"""Tests for metadata-driven parameter widget creation."""
+"""Tests for metadata-driven parameter widget creation.
+
+customtkinter is an optional dependency (``[gui]`` extra, not installed by
+CI's ``[dev]``) — the import is guarded and tests skip when unavailable.
+"""
 
 import unittest
 
-from image_splitter.ui.param_widgets import create_param_widget
 from .conftest import TkTestCase
 
+try:
+    import customtkinter as ctk  # noqa: F401
 
+    from image_splitter.ui.param_widgets import create_param_widget
+except ImportError:  # pragma: no cover - depends on environment
+    create_param_widget = None  # type: ignore[assignment]
+
+
+@unittest.skipIf(create_param_widget is None,
+                 "customtkinter (GUI extra) is not installed")
 class TestParamWidgets(TkTestCase):
     map_offscreen = True
 

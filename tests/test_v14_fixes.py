@@ -146,6 +146,7 @@ class TestV14KeymapTypingGuard(unittest.TestCase):
     def _make_app(self):
         try:
             import customtkinter as ctk  # noqa: F401
+            from image_splitter import gui
             from image_splitter.gui import ImageSplitterApp
         except Exception as exc:  # pragma: no cover
             self.skipTest(f"GUI unavailable: {exc}")
@@ -156,51 +157,76 @@ class TestV14KeymapTypingGuard(unittest.TestCase):
         root = ctk.CTk()
         root.geometry("+10000+10000")
         root.update()
-        return ImageSplitterApp(root), root
+        return ImageSplitterApp(root), root, gui
 
     def test_delete_in_entry_does_not_remove_selected_file(self):
-        """<Delete> pressed inside an Entry must not remove the selected file."""
-        app, root = self._make_app()
+        """<Delete> dispatched through the real key dispatch path must not
+        remove the selected file while the guard reports a typing context.
+
+        V16: the dispatch callable is introspected from
+        ``app._key_dispatches`` (no OS-level key/focus synthesis — that is
+        unreliable on headless/CI runners).  The guard is exercised via a
+        patched ``_is_typing_context`` so the *suppression logic* is what
+        is under test, not the window manager's focus policy.
+        """
+        app, root, gui = self._make_app()
         try:
             with tempfile.TemporaryDirectory() as td:
                 src = _make_input(Path(td))
                 app.state.current_files = [str(src)]
                 app.state.current_file_index = 0
 
-                # Typing focus inside the template entry → guard active.
-                # Real focus lands on CTkEntry's inner tk.Entry
-                # (winfo_class "Entry"), exactly like a user click.
-                # Retry a few update cycles — focus under Windows can be
-                # transiently denied while other roots settle.
-                guard_active = False
-                for _ in range(5):
-                    app.template_entry.focus_set()
-                    root.update()
-                    if app._is_typing_context():
-                        guard_active = True
-                        break
-                self.assertTrue(guard_active, "entry focus did not register")
+                dispatch = app._key_dispatches["<Delete>"]
 
-                # Fire the real event path: bindtags deliver <Delete> to
-                # the Entry class binding AND the root toplevel binding;
-                # the guard must suppress the latter.
-                app.template_entry.event_generate("<Delete>")
-                root.update()
+                # Typing context active → dispatch must be suppressed.
+                with mock.patch.object(app, "_is_typing_context",
+                                       return_value=True):
+                    dispatch(None)
                 self.assertEqual(app.state.current_files, [str(src)])
+
+                # Not typing → the same dispatch removes the file.
+                with mock.patch.object(app, "_is_typing_context",
+                                       return_value=False):
+                    with mock.patch.object(gui.messagebox, "askyesno",
+                                           return_value=True):
+                        dispatch(None)
+                self.assertEqual(app.state.current_files, [])
         finally:
             root.destroy()
 
     def test_typing_context_detection(self):
-        """The guard detects input widgets and ignores non-input focus."""
-        app, root = self._make_app()
+        """The guard classifies widget focus correctly (widget classes)."""
+        app, root, _gui = self._make_app()
         try:
-            app.template_entry.focus_set()
-            root.update()
-            self.assertTrue(app._is_typing_context())
-            # Focus outside any input widget → guard inactive.
-            app.canvas.focus_set()
-            root.update()
-            self.assertFalse(app._is_typing_context())
+            # Input-widget classes are recognised as typing contexts.
+            for cls in ("Entry", "Text", "Spinbox", "TCombobox"):
+
+                class _Fake:
+                    def __init__(self, c):
+                        self._c = c
+
+                    def winfo_class(self):
+                        return self._c
+
+                with mock.patch.object(root, "focus_get",
+                                       return_value=_Fake(cls)):
+                    self.assertTrue(
+                        app._is_typing_context(),
+                        f"{cls} should count as a typing context",
+                    )
+
+            # Non-input widget → guard inactive.
+            class _NonInput:
+                def winfo_class(self):
+                    return "Canvas"
+
+            with mock.patch.object(root, "focus_get",
+                                   return_value=_NonInput()):
+                self.assertFalse(app._is_typing_context())
+
+            # No focus at all → guard inactive (never suppress blindly).
+            with mock.patch.object(root, "focus_get", return_value=None):
+                self.assertFalse(app._is_typing_context())
         finally:
             root.destroy()
 

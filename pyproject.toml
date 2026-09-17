@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "image-splitter"
-version = "0.7.1"
+version = "0.8.0"
 description = "A lightweight, highly modular image processing framework with Blender-like operator philosophy"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Image Splitter Team", email = "example@example.com"}
+    {name = "Image Splitter Team"}
 ]
 keywords = ["image", "processing", "splitter", "batch", "pipeline", "blender"]
 classifiers = [
@@ -43,10 +43,11 @@ gui = ["customtkinter>=5.2.0"]
 image-splitter = "image_splitter.cli:main"
 image-splitter-gui = "image_splitter.gui:main"
 
-[project.urls]
-Homepage = "https://github.com/example/image-splitter"
-Repository = "https://github.com/example/image-splitter"
-Issues = "https://github.com/example/image-splitter/issues"
+# NOTE: add your real repository URLs here before publishing to PyPI:
+# [project.urls]
+# Homepage = "https://github.com/<you>/image-splitter"
+# Repository = "https://github.com/<you>/image-splitter"
+# Issues = "https://github.com/<you>/image-splitter/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

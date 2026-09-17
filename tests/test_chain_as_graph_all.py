@@ -156,18 +156,20 @@ class TestChainAsGraphAllProcessors(unittest.TestCase):
             g_img.close()
 
     def test_split_then_resize_chain(self) -> None:
-        """Known limitation: multi-output processors (splitters) as
-        intermediate steps in a chain fan out to multiple images,
-        but the NodeGraph uses single-socket connections.  The
-        CommandDispatcher handles fan-out per-image; ChainAsGraph
-        only propagates results[0][0].  Splitters should be the
-        LAST step in a chain when using ChainAsGraph."""
+        """V15 fan-out semantics: a multi-output processor (splitter) in
+        the middle of a chain fans out — every subsequent operator is
+        applied to EACH output and all results are collected.  The old
+        behavior propagated only results[0] through the single socket,
+        silently discarding the remaining cells."""
         cmd = "grid_splitter(rows=1,cols=2)|resizer(width=0.5,height=0.5)"
-        # ChainAsGraph: only results[0][0] from splitter flows to resizer
         g_results = ChainAsGraph.execute_chain(self.img.copy(), cmd)
-        self.assertEqual(len(g_results), 1,
-                         "ChainAsGraph produces 1 output because splitter "
-                         "in middle only propagates first result via single socket")
+        self.assertEqual(
+            len(g_results), 2,
+            "mid-chain splitter must fan out: 2 cells × resizer = 2 outputs"
+        )
+        for out in g_results:
+            self.assertEqual(out.size, (15, 20))
+            out.close()
 
 
 if __name__ == "__main__":

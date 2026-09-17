@@ -1,1 +1,2 @@
 Pillow>=10.2.0,<12
+# GUI (optional): pip install -e ".[gui]"  →  customtkinter>=5.2.0

@@ -432,15 +432,22 @@ class TestBugFixes(unittest.TestCase):
                 return [(image.copy(), {})]
 
         ProcessorRegistry.reset()
-        with self.assertLogs("image_splitter.engine.registry", level="WARNING") as cm:
-            fake1 = FakeProcessor()
-            fake2 = FakeProcessor()
-            ProcessorRegistry.register(fake1)
+        fake1 = FakeProcessor()
+        fake2 = FakeProcessor()
+        # V15 policy: duplicate names raise unless allow_override=True.
+        ProcessorRegistry.register(fake1)
+        with self.assertRaises(ValueError):
             ProcessorRegistry.register(fake2)
+        # The original registration is retained.
+        self.assertIs(ProcessorRegistry.get("_test_duplicate"), fake1)
+        # Explicit opt-in still replaces (with a warning).
+        with self.assertLogs("image_splitter.engine.registry", level="WARNING") as cm:
+            ProcessorRegistry.register(fake2, allow_override=True)
             self.assertTrue(
                 any("re-registered" in msg for msg in cm.output),
                 f"Expected re-registration warning, got: {cm.output}"
             )
+        self.assertIs(ProcessorRegistry.get("_test_duplicate"), fake2)
         ProcessorRegistry.reset()
         register_all_processors()
 

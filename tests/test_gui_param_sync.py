@@ -1,4 +1,8 @@
-"""Regression tests for GUI parameter widget → GuiState synchronization."""
+"""Regression tests for GUI parameter widget → GuiState synchronization.
+
+customtkinter is an optional dependency (``[gui]`` extra, not installed by
+CI's ``[dev]``) — the import is guarded and tests skip when unavailable.
+"""
 
 import tempfile
 import unittest
@@ -7,10 +11,17 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from image_splitter import gui
 from .conftest import TkTestCase
 
+try:
+    import customtkinter as ctk  # noqa: F401
 
+    from image_splitter import gui
+except ImportError:  # pragma: no cover - depends on environment
+    gui = None  # type: ignore[assignment]
+
+
+@unittest.skipIf(gui is None, "customtkinter (GUI extra) is not installed")
 class TestGuiParamSync(TkTestCase):
     map_offscreen = True
 
@@ -35,6 +46,14 @@ class TestGuiParamSync(TkTestCase):
         )
 
     def test_entry_widget_edit_updates_state_before_batch_run(self):
+        """Text edits must reach ``state.param_values`` before batch runs.
+
+        V16: the widget→state sync is the named method
+        ``_on_param_widget_changed`` — invoked here directly.  Synthetic
+        ``<KeyRelease>`` events require real OS focus, which is unreliable
+        under headless/CI runners (and already covered by the enum/checkbox
+        command-callback tests below).
+        """
         target = self._select_processor_display("Grid")
         with patch.object(self.app, "fast_update_preview"):
             self.app._on_processor_changed(target)
@@ -43,10 +62,7 @@ class TestGuiParamSync(TkTestCase):
         rows_widget.delete(0, "end")
         rows_widget.insert(0, "4")
         with patch.object(self.app, "fast_update_preview") as preview_mock:
-            rows_widget._entry.focus_force()
-            self.root.update()
-            rows_widget._entry.event_generate("<KeyRelease>")
-            self.root.update()
+            self.app._on_param_widget_changed("rows")
 
         self.assertEqual(self.app.state.param_values["rows"], "4")
         preview_mock.assert_called()

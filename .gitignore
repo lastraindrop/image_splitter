@@ -15,5 +15,7 @@ build/
 dist/
 *.egg-info/
 *.spec
+!packaging/*.spec
 .omo/
 code_review.*
+.ruff_cache/

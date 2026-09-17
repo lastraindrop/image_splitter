@@ -30,7 +30,7 @@ from PIL import Image
 from tkinter import filedialog, messagebox
 
 from image_splitter import keymap, settings
-from image_splitter.core import register_all_processors, batch_process_images
+from image_splitter.core import register_all_processors
 from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.history import HistoryEntry, HistoryManager
 from image_splitter.engine.macro import MacroRecorder
@@ -150,8 +150,16 @@ class ImageSplitterApp:
         )
         processors = ProcessorRegistry.list_all()
         if processors:
-            self.state.set_processor(processors[0].display_name,
-                                     getattr(processors[0], 'tool_tip', ''))
+            # V15: honour the persisted default_processor (falling back to
+            # the first registered one) AND build the parameter panel —
+            # previously __init__ only called state.set_processor(), which
+            # updates the combo label but leaves the Parameters panel
+            # empty until the user manually re-picks an operator.
+            default_name = loaded_settings.get("default_processor", "")
+            startup = next(
+                (p for p in processors if p.name == default_name), processors[0]
+            )
+            self._on_processor_changed(startup.display_name)
         self.state.plugin_count = len(processors)
         self._sync_ui_from_state()
 
@@ -445,35 +453,39 @@ class ImageSplitterApp:
             ctk.CTkLabel(frame, text=meta["label"],
                          font=self._font(9)).pack(side="left")
 
-            # P0-1: Wrap on_change to first sync widget value → state,
-            # then fire fast_update_preview.  Without this, user edits
-            # never reach state.param_values and batch processing
-            # silently uses defaults.
-            #
-            # Use a mutable cell (list) so the widget reference is
-            # captured *after* create_param_widget returns — the
-            # closure binds the list, not the not-yet-assigned widget.
+            # P0-1: widget change → state.param_values → preview refresh.
+            # The logic lives in the named method
+            # ``_on_param_widget_changed`` (not an inline closure) so the
+            # data path is deterministically testable without synthesising
+            # OS-level focus/key events (which are unreliable headless).
             param_name: str = meta["name"]
-            _widget_cell: list = [None]
 
-            def _make_onchange(name: str, cell: list):
+            def _make_onchange(name: str):
                 def _handler(*_args: object) -> None:
-                    w = cell[0]
-                    if w is not None and hasattr(w, "get"):
-                        self.state.param_values[name] = w.get()
-                    self.fast_update_preview()
+                    self._on_param_widget_changed(name)
                 return _handler
 
             name, widget = create_param_widget(
                 frame, meta, font=self._font(9),
-                on_change=_make_onchange(param_name, _widget_cell),
+                on_change=_make_onchange(param_name),
                 theme=self.theme,
             )
-            _widget_cell[0] = widget
             self._param_widgets[param_name] = widget
             widget.pack(side="right")
             self.state.param_values[name] = meta.get("default")
 
+        self.fast_update_preview()
+
+    def _on_param_widget_changed(self, param_name: str) -> None:
+        """Synchronise one parameter widget's value into ``GuiState``.
+
+        Reads the live widget value (``get()``) and triggers a preview
+        refresh.  Called by every widget's change callback — text edits
+        (``<KeyRelease>``), enum selection, and checkbox toggles.
+        """
+        widget = self._param_widgets.get(param_name)
+        if widget is not None and hasattr(widget, "get"):
+            self.state.param_values[param_name] = widget.get()
         self.fast_update_preview()
 
     # ------------------------------------------------------------------
@@ -670,7 +682,18 @@ class ImageSplitterApp:
     def _on_canvas_configure(self, event: Any) -> None:
         if self._resize_after_id is not None:
             self.root.after_cancel(self._resize_after_id)
-        self._resize_after_id = self.root.after(50, self._render_canvas)
+        self._resize_after_id = self.root.after(50, self._debounced_render)
+
+    def _debounced_render(self) -> None:
+        """L-9: the debounced callback can fire after teardown started —
+        guard against the destroyed-widget TclError."""
+        self._resize_after_id = None
+        try:
+            if not self.root.winfo_exists():
+                return
+            self._render_canvas()
+        except Exception:
+            logger.debug("Deferred canvas render skipped", exc_info=True)
 
     def _render_canvas(self) -> None:
         if not self.thumb_img:
@@ -919,17 +942,38 @@ class ImageSplitterApp:
 
     def work_thread(self, p_name: str, config: Dict[str, Any],
                     output_dir: str, files: List[str]) -> None:
+        """V16: parallel batch via the shared runner (core.run_parallel_batch).
+
+        Concurrency comes from the persisted ``max_workers`` setting
+        (0 = CPU core count).  Abort semantics: pending files are
+        cancelled on Stop; the file currently in flight finishes.
+        Progress callbacks arrive on this worker thread and are
+        marshalled to the Tk thread via ``root.after``.
+        """
+        from image_splitter.core import run_parallel_batch
+
+        try:
+            jobs = max(0, int(settings.get_setting("max_workers", 0) or 0))
+        except (TypeError, ValueError):
+            jobs = 0
+
         total = len(files)
-        success_count = 0
-        for i, (path, is_success, msg) in enumerate(batch_process_images(files, p_name, config)):
-            if self.stop_event.is_set():
-                self.root.after(0, lambda: self.finish_report(success_count, total, True))
-                return
-            if is_success:
-                success_count += 1
-            progress = (i + 1) / total
-            self.root.after(0, lambda p=progress, m=msg: self.update_progress(p, m))
-        self.root.after(0, lambda: self.finish_report(success_count, total))
+        done = {"n": 0}
+
+        def _progress(_path: str, ok: bool, msg: str) -> None:
+            done["n"] += 1
+            self.root.after(0, lambda d=done["n"], m=msg: self.update_progress(d / total, m))
+
+        success_count, total_count, aborted = run_parallel_batch(
+            files, p_name, config,
+            jobs=jobs,
+            stop_event=self.stop_event,
+            on_result=_progress,
+        )
+        self.root.after(
+            0,
+            lambda: self.finish_report(success_count, total_count, aborted),
+        )
 
     def update_progress(self, p: float, msg: str) -> None:
         self.state.set_progress(p, msg)
@@ -1100,13 +1144,21 @@ class ImageSplitterApp:
             self.console.input_entry.focus_set()
         self.state.toggle_console()
 
-    def _console_execute(self, operator: str, config: Dict[str, Any]) -> None:
+    def _console_execute(self, operator: str, config: Dict[str, Any]) -> bool:
+        """Dispatch a console operator invocation.
+
+        Returns ``False`` when the invocation was rejected (e.g. no
+        files loaded) so the console can suppress the misleading
+        "[OK] Dispatched" line (V16 / L-2).
+        """
         if not self.state.current_files:
-            return
+            self.console.append_output(
+                "[INFO] No files loaded — use Load button first\n", "info")
+            return False
         # P1-8: Prevent concurrent operations.
         if self._busy:
             self.console.append_output("[BUSY] An operation is already running\n", "warn")
-            return
+            return False
         self._busy = True
         config["output_dir"] = self._last_output_dir
         config["template"] = self.template_entry.get()
@@ -1130,6 +1182,7 @@ class ImageSplitterApp:
             self.root.after(0, self._finish_operation)
 
         threading.Thread(target=_work, daemon=True).start()
+        return True
 
     def _console_execute_chain(self, chain_spec: str) -> None:
         """Run a console '|' chain in the background (non-blocking).
@@ -1351,16 +1404,20 @@ class ImageSplitterApp:
         km = keymap.load_keymap()
         binds = km.get("global", {})
         handlers = self._action_handlers()
+        # Introspectable dispatch table (sequence → callable).  Keeps the
+        # guard path testable without synthesising OS-level key events.
+        self._key_dispatches: Dict[str, Callable[[], None]] = {}
         for seq, action in binds.items():
             handler = handlers.get(action)
             if handler is not None:
                 bound: Callable[[], None] = handler
 
-                def _dispatch(_event: Any, h: Callable[[], None] = bound) -> None:
+                def _dispatch(_event: Any = None, h: Callable[[], None] = bound) -> None:
                     if self._is_typing_context():
                         return
                     h()
                 self.root.bind(seq, _dispatch)
+                self._key_dispatches[seq] = _dispatch
             else:
                 logger.warning(
                     "Keymap action '%s' (%s) has no handler — "

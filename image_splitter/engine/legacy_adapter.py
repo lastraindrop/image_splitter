@@ -110,10 +110,63 @@ class ProcessorNodeAdapter(BaseNode):
 class ChainAsGraph:
     """Drop-in replacement for ``CommandDispatcher.execute_chain()``.
 
-    Parses the same ``cmd_str`` format, builds a linear ``NodeGraph``
-    (ImageInputNode → …ProcessorNodeAdapter… → ImageOutputNode), evaluates
-    it, and returns the resulting images as a list.
+    Parses the same ``cmd_str`` format and executes every operator
+    through the Node Graph engine.
+
+    Chain semantics (V15): operators are applied **per image** with
+    flat-map fan-out.  A multi-output operator (e.g. a splitter) in the
+    middle of a chain fans out — every subsequent operator is applied to
+    *each* of its outputs, and all results are collected.  Previously
+    only ``results[0]`` propagated through the single socket, silently
+    discarding the remaining outputs.
     """
+
+    @staticmethod
+    def _apply_op(
+        image: Image.Image,
+        processor: BaseProcessor,
+        merged_props: Dict[str, Any],
+    ) -> List[Image.Image]:
+        """Run one operator on one image via the Node Graph engine.
+
+        Mirrors ``core._execute_via_graph``: a minimal
+        ``ImageInputNode → ProcessorNodeAdapter`` graph, evaluated with
+        a borrowed (non-copied) input block so the caller keeps image
+        ownership.  Returns all outputs (fan-out aware).
+        """
+        import uuid
+
+        from image_splitter.engine.config_coercion import coerce_processor_config
+        from image_splitter.engine.evaluator import NodeGraph
+        from image_splitter.engine.nodes import ImageInputNode
+
+        uid = uuid.uuid4().hex[:8]
+        input_name = f"__chain_input_{uid}__"
+
+        # Borrow the caller's image — ImageInputNode copies it into the
+        # graph, and forget(close_image=False) never closes it.
+        input_block = ImageDataBlock(name=input_name, image=image)
+
+        graph = NodeGraph()
+        in_node = ImageInputNode("__in__")
+        in_node.set_prop("source", input_block.name)
+        graph.add_node(in_node)
+
+        adapter = ProcessorNodeAdapter(processor, f"__proc_{processor.name}__")
+        adapter._props.update(coerce_processor_config(processor, merged_props))
+        graph.add_node(adapter)
+        graph.connect(in_node.name, "image", adapter.name, "image")
+
+        try:
+            graph.evaluate(force_all=True)
+            outputs = list(adapter._all_outputs)
+            # Detach from the adapter so a later cleanup pass cannot
+            # close images the caller now owns.
+            adapter._all_outputs = []
+            adapter._all_contexts = []
+        finally:
+            ImageDataBlock.forget(input_name, close_image=False)
+        return outputs
 
     @staticmethod
     def execute_chain(
@@ -124,7 +177,7 @@ class ChainAsGraph:
         """Execute a command string via the Node Graph engine.
 
         Args:
-            image: Source PIL image.
+            image: Source PIL image (not closed by this method).
             cmd_str: Pipe-separated command string understood by
                 ``CommandDispatcher.parse_command``.
             extra_config: Optional extra configuration merged into every
@@ -133,11 +186,6 @@ class ChainAsGraph:
         Returns:
             List of output ``PIL.Image`` objects (may be empty).
         """
-        # Lazy imports — evaluator.py is imported here to avoid potential
-        # circular dependencies during parallel development.
-        from image_splitter.engine.evaluator import NodeGraph
-        from image_splitter.engine.nodes import ImageInputNode, ImageOutputNode
-
         # Ensure processors are registered.
         if not ProcessorRegistry.list_all():
             from image_splitter.core import register_all_processors
@@ -146,90 +194,46 @@ class ChainAsGraph:
         # 1. Parse the command string.
         ops: List[tuple[str, Dict[str, Any]]] = CommandDispatcher.parse_command(cmd_str)
 
-        # V14: unique-per-call temp block names — fixed "__chain_input__"
-        # names in the class-level registry raced between concurrent
-        # executions (one thread's forget() released the other's image).
-        import uuid
-        uid = uuid.uuid4().hex[:8]
-        input_name = f"__chain_input_{uid}__"
-        output_name = f"__chain_output_{uid}__"
-
-        # 2. Create an ImageDataBlock for the input image.
-        #    Use a copy so the caller's image is not closed by clear_all().
-        input_block = ImageDataBlock(name=input_name, image=image.copy())
-
-        # 3. Build a linear NodeGraph.
-        graph = NodeGraph()
-
-        # Input node
-        in_node = ImageInputNode("__in__")
-        in_node.set_prop("source", input_block.name)
-        graph.add_node(in_node)
-
-        # Processor nodes
-        prev_name: str = in_node.name
-        adapters: list[ProcessorNodeAdapter] = []
-        for idx, (op_name, props) in enumerate(ops):
-            processor = ProcessorRegistry.get(op_name)
-            adapter = ProcessorNodeAdapter(processor, f"__proc_{idx}_{op_name}__")
-            # Merge extra_config + per-op props, then coerce once.
-            # This preserves the old CommandDispatcher behavior:
-            # {**extra, **props} → coerce_processor_config.
-            from image_splitter.engine.config_coercion import coerce_processor_config
-            merged_props: dict[str, Any] = {}
-            if extra_config:
-                merged_props.update(extra_config)
-            merged_props.update(props)
-            adapter._props.update(
-                coerce_processor_config(processor, merged_props)
-            )
-            graph.add_node(adapter)
-
-            # Connect previous → current (by node name).
-            graph.connect(prev_name, "image", adapter.name, "image")
-            prev_name = adapter.name
-            adapters.append(adapter)
-
-        # Output node
-        out_node = ImageOutputNode("__out__")
-        out_node.set_prop("target", output_name)
-        graph.add_node(out_node)
-        graph.connect(prev_name, "image", out_node.name, "image")
-
-        # 4. Evaluate the graph; on any failure still clean up temp blocks.
-        result_images: List[Image.Image] = []
+        # 2. Flat-map worklist: each op is applied to every current image.
+        #    Multi-output ops (splitters) fan out mid-chain; single-output
+        #    ops keep the list length — identical to the old linear graph.
+        current: List[Image.Image] = [image]
         try:
-            graph.evaluate(force_all=True)
+            for op_idx, (op_name, props) in enumerate(ops):
+                processor = ProcessorRegistry.get(op_name)
+                merged_props: dict[str, Any] = {}
+                if extra_config:
+                    merged_props.update(extra_config)
+                merged_props.update(props)
 
-            # 5. Collect result (copy before cleanup so returned images
-            #    survive cleanup calling .close()).
-            #    For multi-output processors (splitters), collect all
-            #    results from the last adapter's _all_outputs.
-            if adapters and len(adapters[-1]._all_outputs) > 1:
-                # Multi-output: collect all output images
-                for img in adapters[-1]._all_outputs:
-                    result_images.append(img.copy())
-            else:
-                # Single-output: use the output block
-                output_block = ImageDataBlock.get_by_name(output_name)
-                if output_block is not None and output_block.image is not None:
-                    result_images.append(output_block.image.copy())
-        finally:
-            # 6. Clean up — only release blocks created by this chain,
-            #    not ALL blocks in the global registry.
-            for block_name in (input_name, output_name):
-                ImageDataBlock.forget(block_name)
-            # Close intermediate adapter outputs so multi-op chains do not
-            # retain every intermediate image until garbage collection.
-            # The final results are copies (or owned by the caller), so
-            # closing here is safe.
-            for adapter in adapters:
-                for img in adapter._all_outputs:
+                next_images: List[Image.Image] = []
+                for img in current:
+                    outputs = ChainAsGraph._apply_op(img, processor, merged_props)
+                    next_images.extend(outputs)
+                    # Close consumed intermediates eagerly.  The original
+                    # caller-owned image is only borrowed — never closed.
+                    if not (op_idx == 0 and img is image):
+                        try:
+                            img.close()
+                        except Exception:
+                            pass
+                current = next_images
+                if not current:
+                    break
+        except Exception:
+            # A failing operator must not leak the intermediate images
+            # produced so far (V14-4 hygiene).  The caller's original is
+            # borrowed and stays open.
+            for img in current:
+                if img is not image:
                     try:
                         img.close()
                     except Exception:
                         pass
-                adapter._all_outputs = []
-                adapter._all_contexts = []
+            raise
 
-        return result_images
+        # The first op borrowed the caller's image; every image now in
+        # `current` was produced by a processor and is owned by us.
+        # Strip the borrowed original if it somehow survived (it cannot
+        # be in `current` — processor outputs are fresh images).
+        return current

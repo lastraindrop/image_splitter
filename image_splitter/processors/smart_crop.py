@@ -21,10 +21,42 @@ class SmartCropProcessor(BaseProcessor):
 
     Algorithm:
         1. Convert to RGBA or L to get a single intensity channel.
-        2. Threshold to find non-background pixels.
-        3. Compute the bounding box of remaining pixels.
-        4. Expand by ``margin`` and crop.
+        2. Estimate the background level (alpha assumes transparent bg;
+           luminance samples the border frame — works for both dark and
+           light backgrounds).
+        3. Threshold: pixels differing from the background by more than
+           ``threshold`` are content.
+        4. Compute the bounding box of content pixels.
+        5. Expand by ``margin`` and crop.
     """
+
+    @staticmethod
+    def _estimate_bg_level(lum: "Image.Image") -> int:
+        """Estimate background luminance from a thin border frame.
+
+        V15: the luminance path previously assumed a *dark* background
+        (``p > threshold`` = content), which made smart_crop a no-op on
+        white-background images — the most common real-world case
+        (scans, screenshots, product shots).  Border sampling makes the
+        detection background-agnostic.
+        """
+        from PIL import ImageStat
+
+        w, h = lum.size
+        t = max(1, min(2, w // 10, h // 10))
+        strips = [
+            lum.crop((0, 0, w, t)),          # top
+            lum.crop((0, h - t, w, h)),      # bottom
+            lum.crop((0, 0, t, h)),          # left
+            lum.crop((w - t, 0, w, h)),      # right
+        ]
+        total = 0.0
+        count = 0
+        for strip in strips:
+            stat = ImageStat.Stat(strip)
+            total += stat.mean[0] * strip.size[0] * strip.size[1]
+            count += strip.size[0] * strip.size[1]
+        return int(total / count) if count else 0
 
     @property
     def config_model(self) -> type:
@@ -56,14 +88,18 @@ class SmartCropProcessor(BaseProcessor):
         w, h = image.size
 
         if image.mode == "RGBA":
-            # Use alpha channel directly
-            alpha = image.getchannel("A")
+            # Use alpha channel directly (transparent background)
+            mask = image.getchannel("A").point(
+                lambda p: 255 if p > threshold else 0
+            )
         else:
-            # Use luminance as proxy for "content"
-            alpha = image.convert("L")
-
-        # Apply threshold to find non-background pixels
-        mask = alpha.point(lambda p: 255 if p > threshold else 0)
+            # Use luminance difference from the estimated background
+            # level — content is "sufficiently different from the bg".
+            lum = image.convert("L")
+            bg_level = SmartCropProcessor._estimate_bg_level(lum)
+            mask = lum.point(
+                lambda p: 255 if abs(p - bg_level) > threshold else 0
+            )
 
         # Get bounding box of non-zero pixels
         bbox = mask.getbbox()

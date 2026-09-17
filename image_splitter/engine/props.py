@@ -7,6 +7,14 @@ through the descriptor protocol (``__set_name__``, ``__get__``, ``__set__``).
 Convenience factories:
     ``IntProp``, ``FloatProp``, ``BoolProp``, ``EnumProp``,
     ``StrProp``, ``ListProp``, ``ColorProp``
+
+.. deprecated:: 0.8.0
+    V15/V16 audit decision: this module has zero consumers in the
+    production pipeline and none are planned.  It is kept as a
+    **frozen experimental API** for reference and testing — do not
+    build new features on it, and do not extend it.  The supported
+    parameter schema remains ``get_ui_metadata()`` (see
+    ``engine/_ui_metadata_util.py``).
 """
 from __future__ import annotations
 

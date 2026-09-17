@@ -1,4 +1,9 @@
-"""Tests for GUI smoke — customtkinter edition."""
+"""Tests for GUI smoke — customtkinter edition.
+
+The GUI stack (customtkinter) is an optional dependency (``[gui]`` extra,
+not installed by CI's ``[dev]``).  Imports are therefore guarded: if the
+GUI stack is unavailable the module collects cleanly and every test skips.
+"""
 
 import tempfile
 import time
@@ -8,11 +13,17 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from image_splitter import gui
+try:
+    import customtkinter as ctk  # noqa: F401
+
+    from image_splitter import gui
+except ImportError:  # pragma: no cover - depends on environment
+    gui = None  # type: ignore[assignment]
+
 from image_splitter.engine.history import HistoryEntry
 
 
-
+@unittest.skipIf(gui is None, "customtkinter (GUI extra) is not installed")
 class TestGuiSmoke(unittest.TestCase):
     def setUp(self):
         self._temp_dir_obj = tempfile.TemporaryDirectory()
@@ -23,10 +34,10 @@ class TestGuiSmoke(unittest.TestCase):
         Image.new("RGB", (32, 32), color="blue").save(self.img_path)
 
         try:
-            import customtkinter as ctk
-            self.root = ctk.CTk()
+            root = ctk.CTk()
         except Exception:
             self.skipTest("Tk environment unavailable")
+        self.root = root
         self.root.withdraw()
         self.app = gui.ImageSplitterApp(self.root)
 

@@ -55,15 +55,18 @@ def register_all_processors() -> None:
     # Clear and reset to ensure no state residue
     ProcessorRegistry.reset()
 
-    # Scan built-in processors package
+    # Scan built-in processors package (duplicates here are bugs — raise).
     _scan_package(pkg_path, processors.__name__)
 
-    # Scan user plugins directory
+    # Scan user plugins directory.  Plugins register with
+    # allow_override=True so a user plugin can deliberately shadow a
+    # built-in processor (documented extension point).
     plugins_path = Path(__file__).parent / "plugins"
     if plugins_path.is_dir():
         plugin_init = plugins_path / "__init__.py"
         if plugin_init.exists():
-            _scan_package(plugins_path, "image_splitter.plugins")
+            _scan_package(plugins_path, "image_splitter.plugins",
+                          allow_override=True)
 
     # If all failed, at least register the grid_splitter as fallback
     if not ProcessorRegistry.list_all():
@@ -72,12 +75,14 @@ def register_all_processors() -> None:
         ProcessorRegistry.register(GridSplitter())
 
 
-def _scan_package(pkg_path: Path, prefix: str) -> None:
+def _scan_package(pkg_path: Path, prefix: str, *,
+                  allow_override: bool = False) -> None:
     """Scan a package directory for BaseProcessor subclasses and register them.
 
     Args:
         pkg_path: Path to the package directory.
-        prefix: Python module prefix (e.g., 'image_splitter.processors').
+        prefix: Python module prefix (e.g. 'image_splitter.processors').
+        allow_override: Forwarded to :meth:`ProcessorRegistry.register`.
     """
     for _, modname, _ in pkgutil.walk_packages([str(pkg_path)], prefix + "."):
         try:
@@ -93,7 +98,9 @@ def _scan_package(pkg_path: Path, prefix: str) -> None:
                         and obj is not BaseProcessor):
                     try:
                         instance = obj()
-                        ProcessorRegistry.register(instance)
+                        ProcessorRegistry.register(
+                            instance, allow_override=allow_override
+                        )
                     except TypeError:
                         continue
         except Exception as e:
@@ -129,7 +136,7 @@ def _execute_via_graph(
     from image_splitter.engine.data_blocks import ImageDataBlock
     from image_splitter.engine.evaluator import NodeGraph
     from image_splitter.engine.legacy_adapter import ProcessorNodeAdapter
-    from image_splitter.engine.nodes import ImageInputNode, ImageOutputNode
+    from image_splitter.engine.nodes import ImageInputNode
 
     # V14: unique-per-call temporary block names.  Fixed names like
     # "__proc_input__" lived in the class-level ImageDataBlock registry,
@@ -137,15 +144,23 @@ def _execute_via_graph(
     # would race: one thread's forget() released the other's image.
     uid = uuid.uuid4().hex[:8]
     input_block_name = f"__proc_input_{uid}__"
-    output_block_name = f"__proc_output_{uid}__"
 
-    # 1. Create input block (owning a copy so the caller's image survives).
+    # V15: the input block *borrows* the caller's image — no copy.  The
+    # ImageInputNode copies the image when presenting it to the graph, so
+    # the caller's image is never mutated, and the block is forgotten
+    # with close_image=False so the caller keeps ownership.  This drops
+    # the per-invocation copy count from 3 to 1 (V14 made one full-size
+    # copy for the block, another inside ImageInputNode, and a third in
+    # ImageOutputNode).
     input_block = ImageDataBlock(
         name=input_block_name,
-        image=image.copy(),
+        image=image,
     )
 
-    # 2. Build a linear graph: input → adapter → output.
+    # 2. Build a minimal graph: input → adapter.
+    #    V15: the ImageOutputNode round-trip is gone — its only effect
+    #    was another full-size copy that nobody consumed (the results
+    #    are read from the adapter's image_context_pairs below).
     graph = NodeGraph()
 
     in_node = ImageInputNode("__in__")
@@ -157,11 +172,6 @@ def _execute_via_graph(
     graph.add_node(adapter)
     graph.connect(in_node.name, "image", adapter.name, "image")
 
-    out_node = ImageOutputNode("__out__")
-    out_node.set_prop("target", output_block_name)
-    graph.add_node(out_node)
-    graph.connect(adapter.name, "image", out_node.name, "image")
-
     # 3. Evaluate the graph, collecting per-output context dicts.
     #    V14-4: cleanup is in try/finally — a processor exception used to
     #    leak the temporary ImageDataBlocks (with their full-size copies)
@@ -170,9 +180,9 @@ def _execute_via_graph(
         graph.evaluate(force_all=True)
         pairs = adapter.image_context_pairs
     finally:
-        # Clean up temporary blocks (not global blocks).
-        for block_name in (input_block_name, output_block_name):
-            ImageDataBlock.forget(block_name)
+        # Clean up the temporary block without closing the caller's
+        # borrowed image (the caller manages its lifecycle).
+        ImageDataBlock.forget(input_block_name, close_image=False)
 
     return pairs
 
@@ -180,7 +190,8 @@ def _execute_via_graph(
 def process_image(
     image_path: str,
     processor_name: str,
-    config: Any
+    config: Any,
+    batch_index: int = 1,
 ) -> Tuple[bool, str]:
     """Entry point for general image processing logic.
 
@@ -188,6 +199,10 @@ def process_image(
         image_path: Path to the input image.
         processor_name: Registered processor name.
         config: Processing configuration, can be a dict or a corresponding DataClass instance.
+        batch_index: 1-based sequence number of this file within the
+            calling batch.  Exposed to naming templates as ``{batch}``
+            so users can disambiguate files that share a stem (which
+            ``{index}`` cannot — it resets per file).
 
     Returns:
         A tuple of (success, message). success indicates if processing was successful, message is the result description.
@@ -241,9 +256,10 @@ def process_image(
                     opened_cells.append(cell)
                     # 4. Naming and saving
                     base_ctx = {
-                        "filename": base_name, 
+                        "filename": base_name,
                         "ext": ext.lstrip('.'),
                         "index": f"{count + 1:02d}",
+                        "batch": str(batch_index).zfill(2),
                         "w": cell.width,
                         "h": cell.height
                     }
@@ -331,3 +347,90 @@ def batch_process_images(
     for path in input_paths:
         success, msg = process_image(path, processor_name, config)
         yield path, success, msg
+
+
+def run_parallel_batch(
+    input_paths: List[str],
+    processor_name: str,
+    config: Any,
+    jobs: int = 0,
+    stop_event: Any = None,
+    on_result: Any = None,
+) -> Tuple[int, int, bool]:
+    """Process a batch of images, in parallel when *jobs* allows it.
+
+    Shared execution path for the CLI and the GUI batch runner (V16):
+    one implementation of concurrency, progress reporting, and abort
+    semantics instead of two divergent ones.
+
+    Abort semantics: when *stop_event* is set, pending futures are
+    cancelled and iteration stops; files already in flight are allowed
+    to finish (single-file work is atomic).
+
+    Args:
+        input_paths: Image files to process.
+        processor_name: Registered processor name.
+        config: Processing configuration (coerced).
+        jobs: Worker process count.  ``<= 1`` runs sequentially in-process
+            (also keeps tests deterministic without spawning children);
+            ``0`` uses the CPU core count.
+        stop_event: Optional ``threading.Event`` checked between results.
+        on_result: Optional callback ``(path, success, message)`` invoked
+            once per completed file, in completion order.  Callers are
+            responsible for their own thread marshalling.
+
+    Returns:
+        ``(success_count, total, aborted)`` — *aborted* is True when the
+        run was cut short by *stop_event*.
+    """
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    total = len(input_paths)
+    if total == 0:
+        return 0, 0, False
+
+    if jobs <= 0:
+        jobs = multiprocessing.cpu_count()
+
+    success_count = 0
+
+    def _emit(path: str, ok: bool, msg: str) -> None:
+        nonlocal success_count
+        if ok:
+            success_count += 1
+        if on_result is not None:
+            on_result(path, ok, msg)
+
+    def _sequential() -> Tuple[int, int, bool]:
+        for i, path in enumerate(input_paths):
+            if stop_event is not None and stop_event.is_set():
+                return success_count, total, True
+            ok, msg = process_image(path, processor_name, config, i + 1)
+            _emit(path, ok, msg)
+        return success_count, total, False
+
+    if jobs <= 1:
+        return _sequential()
+
+    aborted = False
+    executor = ProcessPoolExecutor(max_workers=jobs)
+    try:
+        futures = [
+            executor.submit(process_image, str(f), processor_name, config, i + 1)
+            for i, f in enumerate(input_paths)
+        ]
+        for path, future in zip(input_paths, futures):
+            if stop_event is not None and stop_event.is_set():
+                aborted = True
+                break
+            try:
+                ok, msg = future.result()
+            except Exception as e:
+                ok, msg = False, f"Runtime exception - {e}"
+            _emit(path, ok, msg)
+    finally:
+        # cancel_futures drops anything not yet started (abort path);
+        # after a normal completion there is nothing left to cancel.
+        executor.shutdown(wait=False, cancel_futures=True)
+    return success_count, total, aborted

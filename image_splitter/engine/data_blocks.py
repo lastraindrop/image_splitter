@@ -225,15 +225,20 @@ class ImageDataBlock:
             return cls._name_registry.get(name)
 
     @classmethod
-    def forget(cls, name: str) -> None:
-        """Remove a block from the registry and release its image.
+    def forget(cls, name: str, *, close_image: bool = True) -> None:
+        """Remove a block from the registry and optionally release its image.
 
         Args:
             name: The block name to remove.
+            close_image: When ``True`` (default) the wrapped image is
+                closed.  Pass ``False`` to transfer ownership of the
+                image back to the caller — used when a block merely
+                *borrows* an image it does not own (e.g. the unified
+                execution path borrows the caller's image).
         """
         with cls._registry_lock:
             block = cls._name_registry.pop(name, None)
-        if block is not None:
+        if block is not None and close_image:
             block.release()
 
     @classmethod

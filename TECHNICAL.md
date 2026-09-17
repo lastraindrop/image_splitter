@@ -4,7 +4,7 @@
 > execution path, processing pipeline details, the parameter **dynamic alignment**
 > protocol (and the tests that lock it), and test methodology.
 >
-> **Status**: V14.0 (package version 0.7.1) — 465 tests / 39 files, mypy 0 errors
+> **Status**: V16.0 (package version 0.8.0) — 498 tests / 41 files, mypy 0 errors
 > (44 source files), ruff clean.
 
 ---
@@ -67,34 +67,39 @@ process_image(path, name, config)
   │
   ├─ 6. _execute_via_graph(orig_img, processor, config):
   │      uid = uuid4().hex[:8]                    ← V14-A1: unique temp names
-  │      ImageDataBlock(f"__proc_input_{uid}__")  ← copy #1 (caller survives)
+  │      ImageDataBlock(f"__proc_input_{uid}__")  ← V15: borrows caller image
   │      NodeGraph:
-  │        ImageInputNode ──▶ ProcessorNodeAdapter ──▶ ImageOutputNode
+  │        ImageInputNode ──▶ ProcessorNodeAdapter
   │      graph.evaluate(force_all=True)           ← try/finally (V14-4)
-  │      finally: forget temp blocks               ← zero leak on exception
+  │      finally: forget(close_image=False)       ← zero leak, caller keeps image
   │      return [(image, context), ...]
   │
   └─ 7. per output: template.format(context) → path-traversal guard
         → _prepare_image_for_save() → ICC preserve → save → close cell
 ```
 
-`ChainAsGraph.execute_chain()` builds the same graph shape (input → N
-adapters → output) with **UUID-suffixed** `__chain_*__` block names and
-returns safe copies. `CommandDispatcher.execute_chain()` is a deprecated
+`ChainAsGraph.execute_chain()` applies every operator per image through the
+same minimal graph (input → adapter), flat-mapping multi-output processors
+across the worklist. `CommandDispatcher.execute_chain()` is a deprecated
 delegate to `ChainAsGraph` — there is no second implementation.
 
 **Locked by**: `test_execute_via_graph.py`, `test_chain_as_graph_all.py`
 (ChainAsGraph vs process_image pixel-identical for all 13 processors),
 `test_v14_fixes.py::TestV14GraphCleanup` (zero block leak on success AND on
-exception, unique names per call).
+exception, unique names per call), `test_v15_fixes.py` (mid-chain fan-out).
 
 ### 2.1 Concurrency Model
 
 | Mode | Mechanism | Isolation |
 |------|-----------|-----------|
-| CLI (default) | `ProcessPoolExecutor` (spawn-safe, `freeze_support`) | Process |
-| GUI (batch/console/pipeline) | `threading.Thread` + `stop_event`, serialized by `_busy` flag | Thread |
+| CLI / GUI batch | `core.run_parallel_batch()` → `ProcessPoolExecutor` (jobs ≥ 2) or in-process sequential (jobs ≤ 1) | Process |
+| GUI console / pipeline | `threading.Thread` + `stop_event`, serialized by `_busy` flag | Thread |
 | Script engine | Serial in-process | N/A |
+
+Both CLI and GUI batch runs share `run_parallel_batch()` — one implementation
+of concurrency, abort (cancel pending futures; in-flight file finishes) and
+per-file progress. The GUI reads worker count from the persisted
+`max_workers` setting (0 = CPU core count).
 
 **Why the UUID block names matter (V14-A1)**: `ImageDataBlock._name_registry`
 is class-level global state. Fixed temp names (`__proc_input__`) meant two
@@ -254,7 +259,7 @@ a security boundary.** Never play macros from untrusted sources.
 
 ## 7. Test Methodology
 
-### 7.1 Organization (39 files, 465 tests)
+### 7.1 Organization (41 files, 498 tests)
 
 | Layer | Files |
 |-------|-------|
@@ -281,8 +286,8 @@ a security boundary.** Never play macros from untrusted sources.
 ### 7.3 Commands
 
 ```bash
-python -m pytest tests/ -v                        # full suite
-python -m pytest tests/ -k "not gui and not ui_preview" -v   # headless CI
+python -m pytest tests/ -v                        # full suite (GUI tests skip without the [gui] extra)
+python -m pytest tests/ -q -k "not gui"           # skip GUI tests explicitly
 python -m pytest tests/test_operator_compliance.py -v        # alignment locks
 python -m mypy image_splitter --ignore-missing-imports       # types
 python -m ruff check image_splitter/ --ignore=E501           # lint
@@ -294,11 +299,11 @@ python -m ruff check image_splitter/ --ignore=E501           # lint
 
 | Limitation | Rationale / Follow-up |
 |------------|----------------------|
-| GUI batch is sequential (single thread) | Parallelization tracked in PLAN.md (needs pool + abort semantics + real-machine smoke) |
-| `props.py` has no consumers | Experimental; deprecation decision tracked in PLAN.md |
+| `props.py` has no consumers | Frozen experimental API (V16 decision) — do not extend; removal deferred until the node-graph UI question is settled |
 | Chain outputs use fixed `{stem}_chain_{idx}` naming | Per-op contexts (row/col) not yet threaded through chains — tracked in PLAN.md |
 | `AdjustConfig` int≤1 = ratio, >1 = pixels | Documented heuristic; explicit-unit param is a roadmap item |
 | History undo/redo restores parameters, not files | By design (files on disk are immutable outputs) |
+| CI runs non-GUI tests only | `customtkinter` is an optional extra; GUI tests skip cleanly when absent |
 
 ---
 
@@ -310,4 +315,6 @@ python -m ruff check image_splitter/ --ignore=E501           # lint
 | V10.0 | 2026-06 | Unified execution (`_execute_via_graph`), UI hardening |
 | V12.0 | 2026-06 | Test-suite optimization, P0 UI component coverage (426 tests) |
 | V13.0 | 2026-09 | **Packaging fix** (standard layout), keymap dead-bindings, border double width<3, console chain threading, CLI dir expansion, preset precedence, chain format honoring (443 tests) |
-| V14.0 | 2026-09 | **Current** — interaction-path audit: dashed border visual fix, macro chain playback, keymap typing guard, graph exception leak, CLI settings defaults, chain ICC preservation, preset name sanitization, UUID temp blocks, GUI rotating file log, watermark origin compensation (465 tests) |
+| V14.0 | 2026-09 | Interaction-path audit: dashed border visual fix, macro chain playback, keymap typing guard, graph exception leak, CLI settings defaults, chain ICC preservation, preset name sanitization, UUID temp blocks, GUI rotating file log, watermark origin compensation (465 tests) |
+| V15.0 | 2026-09 | **Fan-out + lean execution**: mid-chain splitters fan out to every output, 1 defensive copy per invocation (was 3), GUI startup builds the parameter panel, config-file robustness, smart_crop light backgrounds (481 tests) |
+| V16.0 | 2026-09 | **Current — deployability**: shared `run_parallel_batch` (CLI+GUI), parallel GUI batch with cancel-pending abort, `{batch}` placeholder + duplicate-stem pre-flight, registry duplicate policy, LICENSE + 0.8.0, sdist/wheel + clean-venv smoke, PyInstaller onefile, CI GUI-import hardening (498 tests) |

@@ -332,13 +332,29 @@ class BlendNode(BaseNode):
             self.outputs["image"].value = img_a if img_a is not None else img_b
             return
 
-        opacity = self.get_prop("opacity", 0.5)
+        # L-3: coerce and clamp opacity into [0, 1] — out-of-range values
+        # made Image.blend produce garbage or raise a cryptic error.
+        try:
+            opacity = float(self.get_prop("opacity", 0.5))
+        except (TypeError, ValueError):
+            opacity = 0.5
+        opacity = min(1.0, max(0.0, opacity))
 
-        # Ensure both images share the same mode and size
+        # Ensure both images share the same mode and size.  `converted`
+        # tracks the newest derived image we own; earlier derived images
+        # are closed as soon as they are superseded.
+        converted: Any = None
         if img_a.mode != img_b.mode:
-            img_b = img_b.convert(img_a.mode)
+            converted = img_b.convert(img_a.mode)
+            img_b = converted
         if img_a.size != img_b.size:
-            img_b = img_b.resize(img_a.size)
+            resized = img_b.resize(img_a.size)
+            if converted is not None and converted is not img_b:
+                converted.close()
+            converted = resized
+            img_b = converted
 
         blended = Image.blend(img_a, img_b, opacity)
+        if converted is not None:
+            converted.close()
         self.outputs["image"].value = blended
