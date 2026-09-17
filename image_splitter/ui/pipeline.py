@@ -5,10 +5,10 @@ that will be applied in order. Each step is an operator with its
 own parameters.
 """
 
+from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional
 
 import customtkinter as ctk
-from tkinter import messagebox
 
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.ui.param_widgets import create_param_widget

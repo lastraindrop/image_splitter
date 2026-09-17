@@ -215,7 +215,7 @@ def process_image(
         img_p = Path(image_path)
         if not img_p.exists():
             return False, f"Error: File not found: {image_path}"
-            
+
         processor = ProcessorRegistry.get(processor_name)
 
         # 1. Unified configuration coercion and model validation (Fail-Fast)
@@ -225,7 +225,7 @@ def process_image(
             else {}
         )
         config_dict = coerce_processor_config(processor, raw_dict)
-        
+
         if processor.config_model:
             from dataclasses import fields
             model_fields = {f.name for f in fields(processor.config_model)}
@@ -235,20 +235,20 @@ def process_image(
         with Image.open(img_p) as orig_img:
             # Preserve metadata from original image before processing
             orig_icc_profile = orig_img.info.get('icc_profile')
-            
+
             # 2. Execute processor via unified Node Graph path.
             processed_items = _execute_via_graph(orig_img, processor, config_dict)
-            
+
             # 3. Output strategy parsing
             output_dir = Path(config_dict.get('output_dir', "./output"))
             template = config_dict.get('template', "{filename}_{index}")
-                
+
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             base_name = img_p.stem
             ext = img_p.suffix or ".png"
             ext_map = Image.registered_extensions()
-            
+
             count = 0
             opened_cells: list[Image.Image] = []
             try:
@@ -264,22 +264,22 @@ def process_image(
                         "h": cell.height
                     }
                     base_ctx.update(context)
-                    
+
                     # Allow processor to dynamically change extension
                     curr_ext = f".{base_ctx['ext']}"
-                    
+
                     try:
                         name = template.format(**base_ctx)
                     except KeyError as e:
                         return False, f"Invalid template placeholder: {e}"
-                    
+
                     # Extract filename to prevent path traversal
                     safe_name = Path(name.replace('\\', '/')).name
                     if not safe_name.lower().endswith(curr_ext.lower()):
                         safe_name += curr_ext
-                        
+
                     save_path = output_dir / safe_name
-                    
+
                     save_image = cell
                     try:
                         save_fmt = ext_map.get(save_path.suffix.lower(), 'PNG')
@@ -290,7 +290,7 @@ def process_image(
                         icc_profile = context.get('icc_profile') or cell.info.get('icc_profile') or orig_icc_profile
                         if icc_profile:
                             save_args['icc_profile'] = icc_profile
-                            
+
                         save_image.save(save_path, **save_args)
                     finally:
                         if save_image is not cell:
@@ -312,13 +312,13 @@ def process_image(
                             leaked_cell.close()
                         except Exception:
                             pass
-                
+
         return (
             True,
             f"Successfully completed [{processor.display_name}] task, "
             f"generated {count} image(s) to {output_dir}"
         )
-        
+
     except Exception as e:
         logger.exception("Error processing image %s", image_path)
         return False, f"Processing exception ({type(e).__name__}): {str(e)}"
@@ -330,7 +330,7 @@ def split_image_core(image_path: str, config: Any) -> Tuple[bool, str]:
 
 
 def batch_process_images(
-    input_paths: List[str], 
+    input_paths: List[str],
     processor_name: str,
     config: Any
 ) -> Generator[Tuple[str, bool, str], None, None]:

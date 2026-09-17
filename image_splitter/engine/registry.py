@@ -1,7 +1,7 @@
 """Centralized registry for image processors."""
 import logging
 import threading
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

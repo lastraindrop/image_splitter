@@ -34,8 +34,8 @@ class ImageResizer(BaseProcessor):
         return "Scale image dimensions by ratio using LANCZOS algorithm."
 
     def process(
-        self, 
-        image: Image.Image, 
+        self,
+        image: Image.Image,
         config: Dict[str, Any]
     ) -> List[Tuple[Image.Image, Dict[str, Any]]]:
         """Perform image resize."""
@@ -47,9 +47,9 @@ class ImageResizer(BaseProcessor):
         target_h = int(orig_h * height)
         if target_w <= 0 or target_h <= 0:
             raise ValueError("Target width and height must be greater than 0")
-        
+
         new_img = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        
+
         context = {
             "action": "resized",
             "orig_w": orig_w,
@@ -57,5 +57,5 @@ class ImageResizer(BaseProcessor):
             "target_w": target_w,
             "target_h": target_h
         }
-        
+
         return [(new_img, context)]

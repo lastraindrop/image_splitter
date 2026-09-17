@@ -66,6 +66,22 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
 
+[tool.ruff]
+# Pin the rule set so lint results are deterministic across ruff versions
+# (ruff's *default* rule set grows with every release).
+# E/F: pycodestyle/pyflakes errors, I: import sorting, W: warnings.
+# The project's style deliberately keeps `typing.Dict/List/Optional`
+# annotations (UP rules off) and broad `except Exception` guards at
+# subsystem boundaries (BLE/S110 off) — both are documented conventions.
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # line length — handled above, long strings allowed
+]
+
 [tool.ruff.lint.per-file-ignores]
 # cli.py bootstraps sys.path before importing the package (supports
 # running from a source checkout without installation).

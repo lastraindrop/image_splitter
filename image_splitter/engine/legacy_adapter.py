@@ -20,7 +20,6 @@ from image_splitter.engine.dispatcher import CommandDispatcher
 from image_splitter.engine.nodes import BaseNode, SocketType
 from image_splitter.engine.registry import ProcessorRegistry
 
-
 # ---------------------------------------------------------------------------
 # ProcessorNodeAdapter
 # ---------------------------------------------------------------------------

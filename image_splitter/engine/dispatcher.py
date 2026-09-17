@@ -1,9 +1,9 @@
 """Command parsing and chained dispatching for operators."""
 import ast
-
 from typing import Any, Dict, List, Tuple
 
 from PIL import Image
+
 
 class CommandDispatcher:
     """

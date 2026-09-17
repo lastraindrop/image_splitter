@@ -14,7 +14,6 @@ from PIL import Image
 
 from image_splitter.engine.nodes import BaseNode, Connection
 
-
 # ---------------------------------------------------------------------------
 # NodeGraph
 # ---------------------------------------------------------------------------

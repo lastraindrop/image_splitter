@@ -2,7 +2,6 @@
 import logging
 import logging.handlers
 import sys
-
 from pathlib import Path
 
 DEFAULT_FORMAT = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"

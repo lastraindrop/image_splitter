@@ -19,7 +19,6 @@ import typing
 from dataclasses import MISSING, fields
 from typing import Any
 
-
 # Maps Python types (and their origins) to UI metadata type strings.
 _TYPE_MAP: dict[type[object], str] = {
     int: "int",

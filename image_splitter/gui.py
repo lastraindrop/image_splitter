@@ -23,11 +23,11 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from tkinter import filedialog, messagebox
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 from PIL import Image
-from tkinter import filedialog, messagebox
 
 from image_splitter import keymap, settings
 from image_splitter.core import register_all_processors
@@ -35,7 +35,10 @@ from image_splitter.engine.config_coercion import coerce_processor_config
 from image_splitter.engine.history import HistoryEntry, HistoryManager
 from image_splitter.engine.macro import MacroRecorder
 from image_splitter.engine.presets import (
-    delete_preset, list_presets, load_preset, save_preset,
+    delete_preset,
+    list_presets,
+    load_preset,
+    save_preset,
 )
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.logging_config import setup_default_logging
@@ -1341,7 +1344,9 @@ class ImageSplitterApp:
             Path(path).mkdir(parents=True, exist_ok=True)
         try:
             if platform.system() == "Windows":
-                os.startfile(path)
+                # os.startfile is Windows-only; getattr keeps mypy happy
+                # when type-checking on Linux/macOS CI runners.
+                getattr(os, "startfile")(path)
             elif platform.system() == "Darwin":
                 subprocess.run(["open", path])
             else:

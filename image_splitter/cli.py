@@ -17,7 +17,8 @@ if project_root not in sys.path:
 from image_splitter import script_engine, settings
 from image_splitter.core import register_all_processors, run_parallel_batch
 from image_splitter.engine.config_coercion import coerce_processor_config
-from image_splitter.engine.presets import list_presets as _list_presets, load_preset, save_preset
+from image_splitter.engine.presets import list_presets as _list_presets
+from image_splitter.engine.presets import load_preset, save_preset
 from image_splitter.engine.registry import ProcessorRegistry
 from image_splitter.logging_config import setup_default_logging
 
